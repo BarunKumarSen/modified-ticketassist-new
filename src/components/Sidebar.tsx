@@ -155,10 +155,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
           <div className="min-w-0">
             <span className="text-white font-bold text-sm tracking-wide block leading-tight truncate">
-              Median Suite
+              Median Research
             </span>
             <span className="block text-[9px] text-slate-400 uppercase tracking-wider font-semibold truncate">
-              Median Asset &amp; HR Suite
+              Asset &amp; HR Suite
             </span>
           </div>
         </div>

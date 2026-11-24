@@ -1,5 +1,5 @@
 import React from 'react';
-import { Download, Printer, X } from 'lucide-react';
+import { Printer, X } from 'lucide-react';
 import type {
   Asset,
   FreelancerAllotmentRecord,
@@ -7,7 +7,6 @@ import type {
 import type { EmployeeCenterRecord } from '../types/policy';
 import {
   buildFreelancerAllotmentFileName,
-  buildFreelancerAllotmentPdfBytes,
 } from '../utils/allotmentPdf';
 import { resolveCenterOfficeInfo } from '../utils/entityValidation';
 
@@ -77,17 +76,6 @@ export const FreelancerAllotmentPrintModal: React.FC<FreelancerAllotmentPrintMod
     setTimeout(restore, 1500);
   };
 
-  const handleDownloadPdf = () => {
-    const bytes = buildFreelancerAllotmentPdfBytes({ allotment, assets, centers });
-    const blob = new Blob([bytes.buffer as ArrayBuffer], { type: 'application/pdf' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = pdfFileName;
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
   return (
     <div
       role="dialog"
@@ -106,15 +94,6 @@ export const FreelancerAllotmentPrintModal: React.FC<FreelancerAllotmentPrintMod
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <button
-            type="button"
-            onClick={handleDownloadPdf}
-            data-testid="download-allotment-pdf-btn"
-            className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>Download PDF</span>
-          </button>
           <button
             type="button"
             onClick={handlePrint}

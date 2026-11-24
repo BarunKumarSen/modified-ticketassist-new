@@ -1,0 +1,21 @@
+Asset ID,Employee Name,Consultant Name ,Retainer Name,Freelancer Name,Young Research Program,Intern Name,Name,Category,Brand,Serial,Department,Location,Status,Condition,Cost,Book Value
+AST0200,,,,,,,Dell PowerEdge T350 Server,Desktop,Dell,SN-SRV-T350-20,IT,Warehouse,Available,Good,21000,17139
+AST0199,,,,,,,Epson EB-E01 XGA Projector,Peripheral,Epson,SN-PER-EPS-19,Finance,Floor 1,Assigned,Good,34500,22168
+AST0198,,,,,,,Toyota Innova Crysta (Company Car),Vehicle,Toyota,SN-VEH-INN-18,Operations,Warehouse,Available,Fair,2150000,1762924
+AST0197,,,,,,,Sony WH-1000XM5 Headset,Peripheral,Sony,SN-PER-XM5-17,HR,Warehouse,Assigned,New,29990,25752
+AST0196,,,,,,,Logitech MX Master 3S Mouse,Peripheral,Logitech,SN-PER-MXS-16,Operations,Floor 1,Assigned,New,8995,5289
+AST0195,,,,,,,APC 3KVA Online UPS,Networking,APC,SN-NET-UPSK-15,Operations,Server Room,Available,Good,48000,32466
+AST0194,,,,,,,Fortinet FortiGate 60F Firewall,Networking,Fortinet,SN-NET-FGT-14,IT,Server Room,Assigned,Good,89000,51947
+AST0193,,,,,,,Cisco Catalyst 24-Port Switch,Networking,Cisco,SN-NET-CAT-13,IT,Server Room,Available,Good,54000,36515
+AST0192,,,,,,,Apple iPhone 15 Pro,Mobile,Apple,SN-MOB-IP15-12,IT,Floor 2,Available,New,134900,115000
+AST0191,,,,,,,Samsung Galaxy S24 Ultra,Mobile,Samsung,SN-MOB-S24U-11,Sales,Floor 1,Available,New,129999,113000
+AST0190,,,,,,,Conference Table 10 Seater,Furniture,Godrej,SN-FUR-TBL-10,HR,Floor 2,Available,Good,65500,40000
+AST0189,,,,,,,HP LaserJet Pro M404dn,Printer,HP,SN-PRN-M404-09,Operations,Floor 1,Available,Good,28500,18000
+AST0188,,,,,,,Canon ImageRUNNER Printer,Printer,Canon,SN-PRN-CAN-08,Operations,Floor 1,Available,Good,165000,85000
+AST0187,,,,,,,"Dell UltraSharp 27"" Monitor",Monitor,Dell,SN-MON-DEL-07,IT,Floor 2,Available,New,42000,35000
+AST0186,,,,,,,"Apple MacBook Pro 16""",Laptop,Apple,SN-LAP-MBP-06,IT,Floor 1,Assigned,New,249900,210000
+AST0185,,,,,,,HP EliteBook 840 G8,Laptop,HP,SN-LAP-HP-05,Finance,Floor 1,Assigned,Good,95000,60000
+AST0184,,,,,,,Lenovo ThinkPad T14,Laptop,Lenovo,SN-LAP-LEN-04,Operations,Floor 1,Available,Good,110000,80000
+AST0183,,,,,,,Herman Miller Ergonomic Chair,Furniture,Herman Miller,SN-FUR-CHR-03,HR,Floor 2,Assigned,Good,85000,65000
+AST0182,,,,,,,Logitech MX Master 3S Mouse (HR),Peripheral,Logitech,SN-PER-MXS-02,HR,Floor 2,Assigned,New,8995,7000
+AST0181,,,,,,,"Apple MacBook Pro 16"" (M1)",Laptop,Apple,SN-LAP-MBP-01,IT,Floor 2,Available,Good,220000,150000

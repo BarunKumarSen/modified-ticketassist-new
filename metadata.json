@@ -1,0 +1,6 @@
+{
+  "name": "Asset Management",
+  "description": "Enterprise asset lifecycle, assignment, maintenance, depreciation, and expense management suite.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

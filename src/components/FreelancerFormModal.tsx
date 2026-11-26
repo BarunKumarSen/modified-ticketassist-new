@@ -3,6 +3,7 @@ import { Building2, Landmark, Plus, Save, UserPlus, XCircle } from 'lucide-react
 import type { AssetOSState, PersonnelEntity } from '../types/asset';
 import type { EmployeeCenterRecord } from '../types/policy';
 import { apiClient, ApiError } from '../api/client';
+import { validatePasswordStrength } from '../auth/authLogic';
 import { DEFAULT_INDIAN_CENTER, INDIAN_CENTERS, normalizeCenterName } from '../data/indianCenters';
 import { THEME_PALETTES } from '../utils/assetMath';
 import {
@@ -157,6 +158,14 @@ export const FreelancerFormModal: React.FC<FreelancerFormModalProps> = ({
       if (validation.errors.entityCode) setEntityCodeError(validation.errors.entityCode);
       setFormError(validation.error);
       return;
+    }
+
+    if (password.length > 0) {
+      const pwErr = validatePasswordStrength(password);
+      if (pwErr) {
+        setFormError(pwErr);
+        return;
+      }
     }
 
     const resolvedCenter = normalizeCenterName(center.trim() || DEFAULT_INDIAN_CENTER);
@@ -641,7 +650,10 @@ export const FreelancerFormModal: React.FC<FreelancerFormModalProps> = ({
               id="flp-password-input"
               type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                if (formError) setFormError('');
+              }}
               placeholder="Set password to enable Freelancer portal login (min 8 chars)"
               className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:outline-none"
             />

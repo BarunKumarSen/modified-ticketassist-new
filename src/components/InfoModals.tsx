@@ -43,6 +43,7 @@ import {
 } from '../utils/assetMath';
 import {
   type SystemUserValidationErrors,
+  validatePasswordStrength,
 } from '../auth/authLogic';
 import { apiClient, ApiError } from '../api/client';
 import { useSession } from '../auth/SessionContext';
@@ -281,6 +282,13 @@ export const EmployeeFormModal: React.FC<{
     if (!editingEmployee && (!panCard.trim() || !voterIdCard.trim() || !aadhaarCard.trim() || !password)) {
       setFormError('PAN Card, Voter ID Card, Aadhaar Card, and Login Password are mandatory.');
       return;
+    }
+    if (password.length > 0) {
+      const pwErr = validatePasswordStrength(password);
+      if (pwErr) {
+        setFormError(pwErr);
+        return;
+      }
     }
 
     const trimmedMgrEmail = reportingManagerEmail.trim();
@@ -618,7 +626,10 @@ export const EmployeeFormModal: React.FC<{
               type="password"
               required={!editingEmployee}
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                if (formError) setFormError('');
+              }}
               placeholder={editingEmployee ? 'Leave blank to keep existing' : 'Min 8 chars, mixed case + digit'}
               className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:outline-none"
             />

@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import express, { type Express } from 'express';
+import { validatePasswordStrength } from '../src/auth/authLogic.ts';
 import {
   isValidPermission,
   type PermissionName,
@@ -211,16 +212,6 @@ function getTodayDateStr(): string {
 function getCurrentTimeStr(): string {
   const now = new Date();
   return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-}
-
-function validatePasswordStrength(password: string): string | null {
-  const hasLetter = /[a-zA-Z]/.test(password);
-  const hasDigit = /\d/.test(password);
-  const hasSpecial = /[^a-zA-Z0-9]/.test(password);
-  if (password.length < 8 || !hasLetter || !hasDigit || !hasSpecial) {
-    return 'Password must be at least 8 characters and include a letter, a digit, and a special character.';
-  }
-  return null;
 }
 
 function generateStrongTempPassword(): string {
@@ -1216,6 +1207,21 @@ export function createApiApp(
         });
       }
 
+      if (
+        req.body?.password !== undefined &&
+        req.body?.password !== null &&
+        typeof req.body.password !== 'string'
+      ) {
+        return res.status(400).json({ error: 'Password must be a valid string.' });
+      }
+      const nextPassword = typeof req.body?.password === 'string' ? req.body.password : '';
+      if (nextPassword.length > 0) {
+        const pwErr = validatePasswordStrength(nextPassword);
+        if (pwErr) {
+          return res.status(400).json({ error: pwErr });
+        }
+      }
+
       const rawNextCenter =
         typeof req.body?.center === 'string' && req.body.center.trim()
           ? req.body.center.trim()
@@ -1287,6 +1293,7 @@ export function createApiApp(
           address: typeof req.body?.address === 'string' ? req.body.address : existing.address,
           remarks: typeof req.body?.remarks === 'string' ? req.body.remarks : existing.remarks,
           status: req.body?.status === 'Inactive' ? 'Inactive' : req.body?.status === 'Active' ? 'Active' : existing.status,
+          ...(nextPassword.length > 0 ? { password: nextPassword } : {}),
         },
         buildAuditActor(req)
       );
@@ -1294,7 +1301,11 @@ export function createApiApp(
       if (!saved.ok) {
         return res.status(saved.code).json({ error: saved.error });
       }
-      return res.json({ employee: saved.employee });
+      return res.json({
+        employee: saved.employee,
+        passwordUpdated: Boolean(saved.passwordUpdated),
+        userAccountCreated: Boolean(saved.userAccountCreated),
+      });
     }
   );
 
@@ -1467,11 +1478,30 @@ export function createApiApp(
         });
       }
 
+      if (
+        req.body?.password !== undefined &&
+        req.body?.password !== null &&
+        typeof req.body.password !== 'string'
+      ) {
+        return res.status(400).json({ error: 'Password must be a valid string.' });
+      }
+      const nextPassword = typeof req.body?.password === 'string' ? req.body.password : '';
+      if (nextPassword.length > 0) {
+        const pwErr = validatePasswordStrength(nextPassword);
+        if (pwErr) {
+          return res.status(400).json({ error: pwErr });
+        }
+      }
+
       const result = updatePersonnelEntityInDb(db, existing.id, req.body || {}, buildAuditActor(req));
       if (!result.ok) {
         return res.status(result.code).json({ error: result.error });
       }
-      return res.json({ entity: result.entity });
+      return res.json({
+        entity: result.entity,
+        passwordUpdated: Boolean(result.passwordUpdated),
+        userAccountCreated: Boolean(result.userAccountCreated),
+      });
     }
   );
 

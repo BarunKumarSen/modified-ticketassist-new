@@ -192,6 +192,16 @@ const VALID_ROLES: ReadonlySet<SystemUser['role']> = new Set([
   'Employee',
 ]);
 
+export function validatePasswordStrength(password: string): string | null {
+  const hasLetter = /[a-zA-Z]/.test(password);
+  const hasDigit = /\d/.test(password);
+  const hasSpecial = /[^a-zA-Z0-9]/.test(password);
+  if (password.length < 8 || !hasLetter || !hasDigit || !hasSpecial) {
+    return 'Password must be at least 8 characters and include a letter, a digit, and a special character.';
+  }
+  return null;
+}
+
 export function validateSystemUserInput(
   input: SystemUserFormInput,
   existingUsers: SystemUser[],
@@ -219,12 +229,9 @@ export function validateSystemUserInput(
   if (!editingUser && !password) {
     errors.password = 'Password is required.';
   } else if (password.length > 0) {
-    const hasLetter = /[a-zA-Z]/.test(password);
-    const hasDigit = /\d/.test(password);
-    const hasSpecial = /[^a-zA-Z0-9]/.test(password);
-    if (password.length < 8 || !hasLetter || !hasDigit || !hasSpecial) {
-      errors.password =
-        'Password must be at least 8 characters and include a letter, a digit, and a special character.';
+    const pwErr = validatePasswordStrength(password);
+    if (pwErr) {
+      errors.password = pwErr;
     }
   }
 

@@ -263,11 +263,14 @@ export const apiClient = {
       method: 'POST',
       body: JSON.stringify({ csvText, duplicatePolicy }),
     }),
-  updateEmployee: (id: string, payload: Partial<Employee>) =>
-    requestJson<{ employee: Employee }>(`/api/employees/${encodeURIComponent(id)}`, {
-      method: 'PUT',
-      body: JSON.stringify(payload),
-    }),
+  updateEmployee: (id: string, payload: Partial<Employee> & { password?: string }) =>
+    requestJson<{ employee: Employee; passwordUpdated?: boolean; userAccountCreated?: boolean }>(
+      `/api/employees/${encodeURIComponent(id)}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      }
+    ),
   deleteEmployee: (id: string) =>
     requestJson<{ ok: boolean }>(`/api/employees/${encodeURIComponent(id)}`, {
       method: 'DELETE',
@@ -299,11 +302,14 @@ export const apiClient = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-  updateEntity: (id: string, payload: Partial<PersonnelEntity>) =>
-    requestJson<{ entity: PersonnelEntity }>(`/api/entities/${encodeURIComponent(id)}`, {
-      method: 'PUT',
-      body: JSON.stringify(payload),
-    }),
+  updateEntity: (id: string, payload: Partial<PersonnelEntity> & { password?: string }) =>
+    requestJson<{ entity: PersonnelEntity; passwordUpdated?: boolean; userAccountCreated?: boolean }>(
+      `/api/entities/${encodeURIComponent(id)}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      }
+    ),
   toggleConsultantManager: (id: string, isManager: boolean, forceUnassign = false) =>
     requestJson<{ entity: PersonnelEntity }>(
       `/api/entities/${encodeURIComponent(id)}/manager-toggle`,

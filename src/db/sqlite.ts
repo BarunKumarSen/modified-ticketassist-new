@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
+import { validatePasswordStrength } from '../auth/authLogic.ts';
 import {
   PERMISSION_DEFINITIONS,
   PREDEFINED_ROLES,
@@ -1345,6 +1346,9 @@ export function updateUserInDb(
     throw err;
   }
 
+  if (params.password) {
+    console.info(`[AssetOS Auth] Password updated via user profile for loginId=${params.loginId.trim()}`);
+  }
   return getSessionUserById(db, userId);
 }
 
@@ -1353,12 +1357,170 @@ export function resetUserPasswordInDb(
   userId: string,
   newPassword: string
 ): SessionUser | null {
-  const existing = db.prepare(`SELECT id FROM Users WHERE id = ?`).get(userId) as
-    | { id: string }
+  const existing = db.prepare(`SELECT id, login_id FROM Users WHERE id = ?`).get(userId) as
+    | { id: string; login_id: string }
     | undefined;
   if (!existing) return null;
   db.prepare(`UPDATE Users SET password = ? WHERE id = ?`).run(hashPassword(newPassword), userId);
+  console.info(`[AssetOS Auth] Password reset for loginId=${existing.login_id}`);
   return getSessionUserById(db, userId);
+}
+
+function syncLinkedUserPasswordInActiveTx(
+  db: AppDatabase,
+  params: {
+    recordId: string;
+    previousCode: string;
+    nextCode: string;
+    entityTypeLabel: string;
+    fullName: string;
+    previousEmail: string;
+    nextEmail: string;
+    roleId: string;
+    department: string;
+    active: boolean;
+    password: string;
+    actor: AuditActorContext;
+  }
+):
+  | { ok: true; passwordUpdated: boolean; userAccountCreated: boolean }
+  | { ok: false; code: number; error: string } {
+  const pwErr = validatePasswordStrength(params.password);
+  if (pwErr) {
+    return { ok: false, code: 400, error: pwErr };
+  }
+
+  const linkedUsers = db
+    .prepare(
+      `SELECT id, login_id, email, employee_id
+       FROM Users
+       WHERE employee_id = ?
+          OR employee_id = ?
+          OR LOWER(login_id) = LOWER(?)
+          OR LOWER(login_id) = LOWER(?)
+          OR LOWER(login_id) = LOWER(?)`
+    )
+    .all(
+      params.recordId,
+      params.previousCode,
+      params.previousCode,
+      params.recordId,
+      params.nextCode
+    ) as Array<{ id: string; login_id: string; email: string; employee_id: string | null }>;
+
+  const hashedPassword = hashPassword(params.password);
+
+  if (linkedUsers.length > 0) {
+    const updatePwStmt = db.prepare(`UPDATE Users SET password = ? WHERE id = ?`);
+    for (const u of linkedUsers) {
+      updatePwStmt.run(hashedPassword, u.id);
+    }
+
+    const cleanNextEmail = params.nextEmail.trim();
+    const cleanPrevEmail = params.previousEmail.trim();
+    if (
+      linkedUsers.length === 1 &&
+      cleanNextEmail &&
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanNextEmail) &&
+      cleanNextEmail.toLowerCase() !== linkedUsers[0].email.toLowerCase() &&
+      cleanPrevEmail.toLowerCase() === linkedUsers[0].email.toLowerCase()
+    ) {
+      const emailConflict = db
+        .prepare(`SELECT id FROM Users WHERE LOWER(email) = LOWER(?) AND id != ? LIMIT 1`)
+        .get(cleanNextEmail, linkedUsers[0].id) as { id: string } | undefined;
+      if (!emailConflict) {
+        db.prepare(`UPDATE Users SET email = ? WHERE id = ?`).run(cleanNextEmail, linkedUsers[0].id);
+      }
+    }
+
+    const loginIds = linkedUsers.map((u) => u.login_id);
+    writeSystemAuditLog(db, {
+      module: 'Auth',
+      entityType: params.entityTypeLabel,
+      entityId: params.recordId,
+      action: 'PASSWORD_UPDATED',
+      actor: params.actor,
+      beforeObj: null,
+      afterObj: {
+        updatedUserIds: linkedUsers.map((u) => u.id),
+        loginIds,
+      },
+      details: `Updated login password for ${params.entityTypeLabel} ${params.fullName} (${params.nextCode}) [loginIds=${loginIds.join(', ')}]`,
+    });
+    console.info(
+      `[AssetOS Auth] Password updated for ${params.entityTypeLabel} (${params.nextCode}) -> user loginIds=[${loginIds.join(', ')}]`
+    );
+    return { ok: true, passwordUpdated: true, userAccountCreated: false };
+  }
+
+  const resolvedEmail = params.nextEmail.trim();
+  if (!resolvedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(resolvedEmail)) {
+    return {
+      ok: false,
+      code: 400,
+      error: `A valid Email ID is required to enable portal login password for ${params.entityTypeLabel} (${params.nextCode}).`,
+    };
+  }
+
+  const desiredLoginId = params.nextCode.trim();
+  const conflictLogin = db
+    .prepare(`SELECT id, login_id FROM Users WHERE LOWER(login_id) = LOWER(?) LIMIT 1`)
+    .get(desiredLoginId) as { id: string; login_id: string } | undefined;
+  if (conflictLogin) {
+    return {
+      ok: false,
+      code: 409,
+      error: `Login ID "${desiredLoginId}" is already registered to another user login.`,
+    };
+  }
+
+  const conflictEmail = db
+    .prepare(`SELECT id, login_id FROM Users WHERE LOWER(email) = LOWER(?) LIMIT 1`)
+    .get(resolvedEmail) as { id: string; login_id: string } | undefined;
+  if (conflictEmail) {
+    return {
+      ok: false,
+      code: 409,
+      error: `Email "${resolvedEmail}" is already registered to another user login ("${conflictEmail.login_id}").`,
+    };
+  }
+
+  const newUserId = crypto.randomUUID();
+  const createdAt = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO Users (id, login_id, name, email, password, role_id, employee_id, department, active, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    newUserId,
+    desiredLoginId,
+    params.fullName.trim(),
+    resolvedEmail,
+    hashedPassword,
+    params.roleId,
+    params.recordId,
+    params.department.trim() || null,
+    params.active ? 1 : 0,
+    createdAt
+  );
+
+  writeSystemAuditLog(db, {
+    module: 'Auth',
+    entityType: params.entityTypeLabel,
+    entityId: params.recordId,
+    action: 'USER_PASSWORD_PROVISIONED',
+    actor: params.actor,
+    beforeObj: null,
+    afterObj: {
+      userId: newUserId,
+      loginId: desiredLoginId,
+      roleId: params.roleId,
+    },
+    details: `Provisioned portal login and password for ${params.entityTypeLabel} ${params.fullName} (${desiredLoginId})`,
+  });
+  console.info(
+    `[AssetOS Auth] Provisioned user login and password for ${params.entityTypeLabel} (${desiredLoginId})`
+  );
+  return { ok: true, passwordUpdated: true, userAccountCreated: true };
 }
 
 export function deleteUserInDb(db: AppDatabase, userId: string): boolean {
@@ -1562,28 +1724,46 @@ export function createEmployeeInDb(
 export function updateEmployeeInDb(
   db: AppDatabase,
   id: string,
-  patch: Partial<Employee>,
+  patch: Partial<Employee> & { password?: string },
   actor: AuditActorContext = DEFAULT_SYSTEM_ACTOR
-): { ok: true; employee: Employee } | { ok: false; code: number; error: string } {
+):
+  | { ok: true; employee: Employee; passwordUpdated?: boolean; userAccountCreated?: boolean }
+  | { ok: false; code: number; error: string } {
+  if (
+    patch.password !== undefined &&
+    patch.password !== null &&
+    typeof patch.password !== 'string'
+  ) {
+    return { ok: false, code: 400, error: 'Password must be a valid string.' };
+  }
+  const rawPassword = typeof patch.password === 'string' ? patch.password : '';
+  if (rawPassword.length > 0) {
+    const pwErr = validatePasswordStrength(rawPassword);
+    if (pwErr) {
+      return { ok: false, code: 400, error: pwErr };
+    }
+  }
+  const { password: _ignoredPassword, ...cleanPatch } = patch;
+
   const allEmployees = listEmployeesFromDb(db);
   const existing = allEmployees.find((e) => e.id === id || e.employeeId === id);
   if (!existing) return { ok: false, code: 404, error: 'Employee not found.' };
 
   const nextIsManager =
-    typeof patch.isManager === 'boolean' ? patch.isManager : Boolean(existing.isManager);
+    typeof cleanPatch.isManager === 'boolean' ? cleanPatch.isManager : Boolean(existing.isManager);
 
   let nextReportingManagerId =
-    patch.reportingManagerId !== undefined
-      ? (patch.reportingManagerId || '').trim()
+    cleanPatch.reportingManagerId !== undefined
+      ? (cleanPatch.reportingManagerId || '').trim()
       : existing.reportingManagerId || '';
-  let nextReportingManagerName = (patch.reportingManagerName ?? existing.reportingManagerName ?? '').trim();
-  let nextReportingManagerEmail = (patch.reportingManagerEmail ?? existing.reportingManagerEmail ?? '').trim();
+  let nextReportingManagerName = (cleanPatch.reportingManagerName ?? existing.reportingManagerName ?? '').trim();
+  let nextReportingManagerEmail = (cleanPatch.reportingManagerEmail ?? existing.reportingManagerEmail ?? '').trim();
 
-  if (patch.reportingManagerId !== undefined) {
+  if (cleanPatch.reportingManagerId !== undefined) {
     if (!nextReportingManagerId) {
       nextReportingManagerId = '';
-      if (patch.reportingManagerName === undefined) nextReportingManagerName = '';
-      if (patch.reportingManagerEmail === undefined) nextReportingManagerEmail = '';
+      if (cleanPatch.reportingManagerName === undefined) nextReportingManagerName = '';
+      if (cleanPatch.reportingManagerEmail === undefined) nextReportingManagerEmail = '';
     } else {
       const validation = validateManagerMapping({
         employees: allEmployees,
@@ -1607,53 +1787,53 @@ export function updateEmployeeInDb(
   }
 
   const resolvedCenter = normalizeCenterName(
-    patch.center ?? existing.center ?? patch.branch ?? existing.branch ?? DEFAULT_INDIAN_CENTER
+    cleanPatch.center ?? existing.center ?? cleanPatch.branch ?? existing.branch ?? DEFAULT_INDIAN_CENTER
   );
   const resolvedBranch = normalizeCenterName(
-    patch.branch ?? existing.branch ?? resolvedCenter ?? DEFAULT_INDIAN_CENTER
+    cleanPatch.branch ?? existing.branch ?? resolvedCenter ?? DEFAULT_INDIAN_CENTER
   );
 
-  const nextOfficialEmail = (patch.officialEmail ?? patch.email ?? existing.officialEmail ?? existing.email).trim();
-  const nextPersonalEmail = (patch.personalEmail ?? existing.personalEmail ?? '').trim();
+  const nextOfficialEmail = (cleanPatch.officialEmail ?? cleanPatch.email ?? existing.officialEmail ?? existing.email).trim();
+  const nextPersonalEmail = (cleanPatch.personalEmail ?? existing.personalEmail ?? '').trim();
 
   const updatedPayload: Employee = {
     ...existing,
-    ...patch,
+    ...cleanPatch,
     id: existing.id,
     employeeId: existing.employeeId,
-    name: (patch.name ?? existing.name).trim(),
-    email: (patch.email ?? nextOfficialEmail ?? existing.email).trim(),
+    name: (cleanPatch.name ?? existing.name).trim(),
+    email: (cleanPatch.email ?? nextOfficialEmail ?? existing.email).trim(),
     personalEmail: nextPersonalEmail,
     officialEmail: nextOfficialEmail,
     personalEmailVerified:
-      typeof patch.personalEmailVerified === 'boolean'
-        ? patch.personalEmailVerified
+      typeof cleanPatch.personalEmailVerified === 'boolean'
+        ? cleanPatch.personalEmailVerified
         : Boolean(existing.personalEmailVerified),
     officialEmailVerified:
-      typeof patch.officialEmailVerified === 'boolean'
-        ? patch.officialEmailVerified
+      typeof cleanPatch.officialEmailVerified === 'boolean'
+        ? cleanPatch.officialEmailVerified
         : Boolean(existing.officialEmailVerified),
-    uanNumber: (patch.uanNumber ?? existing.uanNumber ?? '').trim(),
-    panCard: (patch.panCard ?? existing.panCard ?? '').trim().toUpperCase(),
-    voterIdCard: (patch.voterIdCard ?? existing.voterIdCard ?? '').trim().toUpperCase(),
-    aadhaarCard: (patch.aadhaarCard ?? existing.aadhaarCard ?? '').trim(),
+    uanNumber: (cleanPatch.uanNumber ?? existing.uanNumber ?? '').trim(),
+    panCard: (cleanPatch.panCard ?? existing.panCard ?? '').trim().toUpperCase(),
+    voterIdCard: (cleanPatch.voterIdCard ?? existing.voterIdCard ?? '').trim().toUpperCase(),
+    aadhaarCard: (cleanPatch.aadhaarCard ?? existing.aadhaarCard ?? '').trim(),
     leaveCarryForward:
-      patch.leaveCarryForward !== undefined
-        ? Number(patch.leaveCarryForward) || 0
+      cleanPatch.leaveCarryForward !== undefined
+        ? Number(cleanPatch.leaveCarryForward) || 0
         : Number(existing.leaveCarryForward) || 0,
-    department: (patch.department ?? existing.department).trim(),
-    designation: (patch.designation ?? existing.designation).trim(),
-    phone: (patch.phone ?? existing.phone ?? '').trim(),
+    department: (cleanPatch.department ?? existing.department).trim(),
+    designation: (cleanPatch.designation ?? existing.designation).trim(),
+    phone: (cleanPatch.phone ?? existing.phone ?? '').trim(),
     branch: resolvedBranch,
     center: resolvedCenter,
     isManager: nextIsManager,
     reportingManagerId: nextReportingManagerId,
     reportingManagerName: nextReportingManagerName,
     reportingManagerEmail: nextReportingManagerEmail,
-    joiningDate: patch.joiningDate ?? existing.joiningDate ?? '',
-    address: (patch.address ?? existing.address ?? '').trim(),
-    remarks: (patch.remarks ?? existing.remarks ?? '').trim(),
-    status: patch.status === 'Inactive' ? 'Inactive' : patch.status === 'Active' ? 'Active' : existing.status,
+    joiningDate: cleanPatch.joiningDate ?? existing.joiningDate ?? '',
+    address: (cleanPatch.address ?? existing.address ?? '').trim(),
+    remarks: (cleanPatch.remarks ?? existing.remarks ?? '').trim(),
+    status: cleanPatch.status === 'Inactive' ? 'Inactive' : cleanPatch.status === 'Active' ? 'Active' : existing.status,
   };
 
   db.exec('BEGIN IMMEDIATE');
@@ -1739,8 +1919,33 @@ export function updateEmployeeInDb(
       details: `Updated employee ${saved.name} (${saved.employeeId})`,
     });
 
+    let passwordUpdated = false;
+    let userAccountCreated = false;
+    if (rawPassword.length > 0) {
+      const syncRes = syncLinkedUserPasswordInActiveTx(db, {
+        recordId: saved.id,
+        previousCode: existing.employeeId,
+        nextCode: saved.employeeId,
+        entityTypeLabel: 'Employee',
+        fullName: saved.name,
+        previousEmail: existing.officialEmail || existing.email || existing.personalEmail || '',
+        nextEmail: saved.officialEmail || saved.email || saved.personalEmail || '',
+        roleId: saved.isManager ? 'role_dept_manager' : 'role_employee',
+        department: saved.department,
+        active: saved.status === 'Active',
+        password: rawPassword,
+        actor,
+      });
+      if (!syncRes.ok) {
+        db.exec('ROLLBACK');
+        return syncRes;
+      }
+      passwordUpdated = syncRes.passwordUpdated;
+      userAccountCreated = syncRes.userAccountCreated;
+    }
+
     db.exec('COMMIT');
-    return { ok: true, employee: saved };
+    return { ok: true, employee: saved, passwordUpdated, userAccountCreated };
   } catch (err) {
     db.exec('ROLLBACK');
     throw err;
@@ -4826,9 +5031,27 @@ export function createPersonnelEntityInDb(
 export function updatePersonnelEntityInDb(
   db: AppDatabase,
   id: string,
-  patch: Partial<PersonnelEntity>,
+  patch: Partial<PersonnelEntity> & { password?: string },
   actor: AuditActorContext = DEFAULT_SYSTEM_ACTOR
-): { ok: true; entity: PersonnelEntity } | { ok: false; code: number; error: string } {
+):
+  | { ok: true; entity: PersonnelEntity; passwordUpdated?: boolean; userAccountCreated?: boolean }
+  | { ok: false; code: number; error: string } {
+  if (
+    patch.password !== undefined &&
+    patch.password !== null &&
+    typeof patch.password !== 'string'
+  ) {
+    return { ok: false, code: 400, error: 'Password must be a valid string.' };
+  }
+  const rawPassword = typeof patch.password === 'string' ? patch.password : '';
+  if (rawPassword.length > 0) {
+    const pwErr = validatePasswordStrength(rawPassword);
+    if (pwErr) {
+      return { ok: false, code: 400, error: pwErr };
+    }
+  }
+  const { password: _ignoredPassword, ...cleanPatch } = patch;
+
   const existingEntities = listPersonnelEntitiesFromDb(db);
   const existingEmployees = listEmployeesFromDb(db);
   const existing = existingEntities.find(
@@ -4838,7 +5061,7 @@ export function updatePersonnelEntityInDb(
     return { ok: false, code: 404, error: 'Personnel record not found.' };
   }
 
-  const nextCodeRaw = patch.entityCode ?? existing.entityCode;
+  const nextCodeRaw = cleanPatch.entityCode ?? existing.entityCode;
   const idCheck = validateEntityId({
     rawId: nextCodeRaw,
     existingEntities,
@@ -4852,42 +5075,46 @@ export function updatePersonnelEntityInDb(
 
   const nextIsManager =
     existing.entityType === 'Consultant'
-      ? typeof patch.isManager === 'boolean'
-        ? patch.isManager
+      ? typeof cleanPatch.isManager === 'boolean'
+        ? cleanPatch.isManager
         : existing.isManager
       : false;
 
+  const nextEmail = (cleanPatch.email ?? existing.email).trim();
+  const nextOfficialEmail = (cleanPatch.officialEmail ?? existing.officialEmail ?? '').trim();
+  const nextPersonalEmail = (cleanPatch.personalEmail ?? existing.personalEmail ?? '').trim();
+
   const updated: PersonnelEntity = {
     ...existing,
-    ...patch,
+    ...cleanPatch,
     id: existing.id,
     entityType: existing.entityType,
     entityCode: idCheck.normalizedId,
-    name: (patch.name ?? existing.name).trim(),
-    email: (patch.email ?? existing.email).trim(),
-    personalEmail: (patch.personalEmail ?? existing.personalEmail ?? '').trim(),
-    officialEmail: (patch.officialEmail ?? existing.officialEmail ?? '').trim(),
-    phone: (patch.phone ?? existing.phone ?? '').trim(),
-    whatsappNo: (patch.whatsappNo ?? existing.whatsappNo ?? '').trim(),
-    fatherHusbandName: (patch.fatherHusbandName ?? existing.fatherHusbandName ?? '').trim(),
-    address: (patch.address ?? existing.address ?? '').trim(),
-    center: normalizeCenterName(patch.center ?? existing.center),
-    department: (patch.department ?? existing.department).trim(),
-    designation: (patch.designation ?? existing.designation).trim(),
+    name: (cleanPatch.name ?? existing.name).trim(),
+    email: nextEmail,
+    personalEmail: nextPersonalEmail,
+    officialEmail: nextOfficialEmail,
+    phone: (cleanPatch.phone ?? existing.phone ?? '').trim(),
+    whatsappNo: (cleanPatch.whatsappNo ?? existing.whatsappNo ?? '').trim(),
+    fatherHusbandName: (cleanPatch.fatherHusbandName ?? existing.fatherHusbandName ?? '').trim(),
+    address: (cleanPatch.address ?? existing.address ?? '').trim(),
+    center: normalizeCenterName(cleanPatch.center ?? existing.center),
+    department: (cleanPatch.department ?? existing.department).trim(),
+    designation: (cleanPatch.designation ?? existing.designation).trim(),
     isManager: nextIsManager,
-    aadhaarCard: (patch.aadhaarCard ?? existing.aadhaarCard ?? '').replace(/\s+/g, ''),
-    panCard: (patch.panCard ?? existing.panCard ?? '').trim().toUpperCase(),
-    projectName: (patch.projectName ?? existing.projectName ?? '').trim(),
-    projectNo: (patch.projectNo ?? existing.projectNo ?? '').trim(),
-    eicName: (patch.eicName ?? existing.eicName ?? '').trim(),
-    bankName: (patch.bankName ?? existing.bankName ?? '').trim(),
-    bankBranch: (patch.bankBranch ?? existing.bankBranch ?? '').trim(),
-    bankAccountType: (patch.bankAccountType ?? existing.bankAccountType ?? 'Savings').trim(),
-    bankAccountNo: (patch.bankAccountNo ?? existing.bankAccountNo ?? '').trim(),
-    ifscCode: (patch.ifscCode ?? existing.ifscCode ?? '').trim().toUpperCase(),
-    joiningDate: (patch.joiningDate ?? existing.joiningDate ?? '').trim(),
-    status: patch.status === 'Inactive' ? 'Inactive' : patch.status === 'Active' ? 'Active' : existing.status,
-    remarks: (patch.remarks ?? existing.remarks ?? '').trim(),
+    aadhaarCard: (cleanPatch.aadhaarCard ?? existing.aadhaarCard ?? '').replace(/\s+/g, ''),
+    panCard: (cleanPatch.panCard ?? existing.panCard ?? '').trim().toUpperCase(),
+    projectName: (cleanPatch.projectName ?? existing.projectName ?? '').trim(),
+    projectNo: (cleanPatch.projectNo ?? existing.projectNo ?? '').trim(),
+    eicName: (cleanPatch.eicName ?? existing.eicName ?? '').trim(),
+    bankName: (cleanPatch.bankName ?? existing.bankName ?? '').trim(),
+    bankBranch: (cleanPatch.bankBranch ?? existing.bankBranch ?? '').trim(),
+    bankAccountType: (cleanPatch.bankAccountType ?? existing.bankAccountType ?? 'Savings').trim(),
+    bankAccountNo: (cleanPatch.bankAccountNo ?? existing.bankAccountNo ?? '').trim(),
+    ifscCode: (cleanPatch.ifscCode ?? existing.ifscCode ?? '').trim().toUpperCase(),
+    joiningDate: (cleanPatch.joiningDate ?? existing.joiningDate ?? '').trim(),
+    status: cleanPatch.status === 'Inactive' ? 'Inactive' : cleanPatch.status === 'Active' ? 'Active' : existing.status,
+    remarks: (cleanPatch.remarks ?? existing.remarks ?? '').trim(),
   };
 
   db.exec('BEGIN IMMEDIATE');
@@ -4955,8 +5182,33 @@ export function updatePersonnelEntityInDb(
       details: `Updated ${saved.entityType} ${saved.name} (${saved.entityCode})`,
     });
 
+    let passwordUpdated = false;
+    let userAccountCreated = false;
+    if (rawPassword.length > 0) {
+      const syncRes = syncLinkedUserPasswordInActiveTx(db, {
+        recordId: saved.id,
+        previousCode: existing.entityCode,
+        nextCode: saved.entityCode,
+        entityTypeLabel: saved.entityType,
+        fullName: saved.name,
+        previousEmail: existing.officialEmail || existing.email || existing.personalEmail || '',
+        nextEmail: saved.officialEmail || saved.email || saved.personalEmail || '',
+        roleId: ENTITY_TYPE_TO_ROLE_ID[saved.entityType],
+        department: saved.department,
+        active: saved.status === 'Active',
+        password: rawPassword,
+        actor,
+      });
+      if (!syncRes.ok) {
+        db.exec('ROLLBACK');
+        return syncRes;
+      }
+      passwordUpdated = syncRes.passwordUpdated;
+      userAccountCreated = syncRes.userAccountCreated;
+    }
+
     db.exec('COMMIT');
-    return { ok: true, entity: saved };
+    return { ok: true, entity: saved, passwordUpdated, userAccountCreated };
   } catch (err) {
     db.exec('ROLLBACK');
     throw err;

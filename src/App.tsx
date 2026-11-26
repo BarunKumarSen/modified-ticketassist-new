@@ -1895,8 +1895,11 @@ function AppContent() {
           onSave={async (payload) => {
             try {
               if (payload.id) {
-                await apiClient.updateEmployee(payload.id, payload);
+                const res = await apiClient.updateEmployee(payload.id, payload);
                 showToast('Employee updated');
+                if (res.userAccountCreated) {
+                  await refreshRbacData();
+                }
               } else {
                 await apiClient.createEmployee(payload);
                 showToast('New employee added & login account created');
@@ -2007,8 +2010,11 @@ function AppContent() {
           onSave={async (payload) => {
             try {
               if (payload.id) {
-                await apiClient.updateEntity(payload.id, payload);
+                const res = await apiClient.updateEntity(payload.id, payload);
                 showToast(`${activeModal.entityType} updated`);
+                if (res.userAccountCreated) {
+                  await refreshRbacData();
+                }
               } else {
                 await apiClient.createEntity(payload);
                 showToast(`${activeModal.entityType} registered`);
@@ -2036,8 +2042,11 @@ function AppContent() {
           onSave={async (payload) => {
             try {
               if (payload.id) {
-                await apiClient.updateEntity(payload.id, payload);
+                const res = await apiClient.updateEntity(payload.id, payload);
                 showToast('Freelancer updated');
+                if (res.userAccountCreated) {
+                  await refreshRbacData();
+                }
               } else {
                 await apiClient.createEntity(payload);
                 showToast('Freelancer onboarded');

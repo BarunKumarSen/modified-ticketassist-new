@@ -7,6 +7,7 @@ import type {
 } from '../types/asset';
 import type { EmployeeCenterRecord } from '../types/policy';
 import { apiClient, ApiError } from '../api/client';
+import { validatePasswordStrength } from '../auth/authLogic';
 import { useSession } from '../auth/SessionContext';
 import { DEFAULT_INDIAN_CENTER, INDIAN_CENTERS, normalizeCenterName } from '../data/indianCenters';
 import { THEME_PALETTES } from '../utils/assetMath';
@@ -130,6 +131,14 @@ export const PersonnelEntityModal: React.FC<PersonnelEntityModalProps> = ({
       if (validation.errors.entityCode) setEntityCodeError(validation.errors.entityCode);
       setFormError(validation.error);
       return;
+    }
+
+    if (password.length > 0) {
+      const pwErr = validatePasswordStrength(password);
+      if (pwErr) {
+        setFormError(pwErr);
+        return;
+      }
     }
 
     const resolvedCenter = normalizeCenterName(center.trim() || DEFAULT_INDIAN_CENTER);
@@ -407,7 +416,10 @@ export const PersonnelEntityModal: React.FC<PersonnelEntityModalProps> = ({
               id="entity-password-input"
               type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                if (formError) setFormError('');
+              }}
               placeholder="Set password to enable portal sign-in (min 8 chars)"
               className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:outline-none"
             />

@@ -40,7 +40,13 @@ import {
   resolveCenterOfficeInfo,
   validateFreelancerAllotmentInput,
 } from '../utils/entityValidation.ts';
-import { isAdminRole } from '../utils/hierarchyLogic.ts';
+import {
+  getDirectReportsForManager,
+  isAdminRole,
+  isEmployeeManagerUser,
+  resolveEmployeeByIdentifier,
+  resolveEntityByIdentifier,
+} from '../utils/hierarchyLogic.ts';
 import { resolveEffectiveTicketStatus, sortTicketsFcfs } from '../utils/ticketLogic.ts';
 
 export interface AuditActorContext {
@@ -190,6 +196,12 @@ function mapAssetRow(r: Record<string, unknown>): Asset {
     accessoriesIssued: r.accessories_issued ? String(r.accessories_issued) : undefined,
     lastVerificationDate: r.last_verification_date ? String(r.last_verification_date) : undefined,
     remarks: r.remarks ? String(r.remarks) : undefined,
+    employeeName: r.employee_name ? String(r.employee_name) : undefined,
+    consultantName: r.consultant_name ? String(r.consultant_name) : undefined,
+    retainerName: r.retainer_name ? String(r.retainer_name) : undefined,
+    freelancerName: r.freelancer_name ? String(r.freelancer_name) : undefined,
+    yrpName: r.yrp_name ? String(r.yrp_name) : undefined,
+    internName: r.intern_name ? String(r.intern_name) : undefined,
   };
 }
 
@@ -202,8 +214,9 @@ function insertAssetStmt(db: DatabaseSync) {
       invoice_number, warranty_months, warranty_expiry, department, location, condition, status,
       dep_method, useful_life, salvage_value, current_value, description, image,
       project_name, project_no, eic_name, assigned_flp, flp_id,
-      date_of_issue, date_of_return, accessories_issued, last_verification_date, remarks
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      date_of_issue, date_of_return, accessories_issued, last_verification_date, remarks,
+      employee_name, consultant_name, retainer_name, freelancer_name, yrp_name, intern_name
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 }
 
@@ -248,7 +261,13 @@ function runInsertAsset(stmt: ReturnType<DatabaseSync['prepare']>, a: Asset) {
     a.dateOfReturn || '',
     a.accessoriesIssued || '',
     a.lastVerificationDate || '',
-    a.remarks || ''
+    a.remarks || '',
+    a.employeeName || '',
+    a.consultantName || '',
+    a.retainerName || '',
+    a.freelancerName || '',
+    a.yrpName || '',
+    a.internName || ''
   );
 }
 
@@ -300,6 +319,12 @@ export function seedWorkspaceTablesIfNeeded(db: DatabaseSync): void {
   ensureColumn(db, 'Assets', 'accessories_issued', "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, 'Assets', 'last_verification_date', "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, 'Assets', 'remarks', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'Assets', 'employee_name', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'Assets', 'consultant_name', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'Assets', 'retainer_name', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'Assets', 'freelancer_name', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'Assets', 'yrp_name', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'Assets', 'intern_name', "TEXT NOT NULL DEFAULT ''");
 
   // Idempotent custody chain columns on Assignments
   ensureColumn(db, 'Assignments', 'assignee_type', "TEXT NOT NULL DEFAULT 'Employee'");
@@ -906,37 +931,107 @@ export function listWorkspaceStateFromDb(
       : [];
 
   if (!isPrivilegedViewer && viewer) {
-    const allowedHolderKeys = new Set<string>();
-    for (const key of [viewer.id, viewer.employeeId, viewer.entityId]) {
-      if (key && key.trim()) allowedHolderKeys.add(key.trim().toUpperCase());
+    const allEmpRows = db
+      .prepare(
+        `SELECT id, employee_id, name, email, department, designation, phone, branch, center,
+                is_manager, reporting_manager_id, reporting_manager_name, reporting_manager_email, status
+         FROM Employees`
+      )
+      .all() as Array<Record<string, unknown>>;
+    const allEmployees: Employee[] = allEmpRows.map((r) => ({
+      id: String(r.id),
+      employeeId: String(r.employee_id || r.id),
+      name: String(r.name || ''),
+      email: String(r.email || ''),
+      department: String(r.department || ''),
+      designation: String(r.designation || ''),
+      phone: String(r.phone || ''),
+      branch: String(r.branch || ''),
+      center: String(r.center || r.branch || ''),
+      isManager: Boolean(r.is_manager),
+      reportingManagerId: r.reporting_manager_id ? String(r.reporting_manager_id) : '',
+      reportingManagerName: r.reporting_manager_name ? String(r.reporting_manager_name) : '',
+      reportingManagerEmail: r.reporting_manager_email ? String(r.reporting_manager_email) : '',
+      status: r.status === 'Inactive' ? 'Inactive' : 'Active',
+    }));
+
+    const viewerEmp =
+      resolveEmployeeByIdentifier(allEmployees, viewer.employeeId) ||
+      (viewer.email
+        ? allEmployees.find((e) => e.email.toLowerCase() === viewer.email.toLowerCase())
+        : undefined);
+    const viewerEnt =
+      resolveEntityByIdentifier(entities, viewer.entityId || viewer.employeeId) ||
+      (viewer.email
+        ? entities.find((e) => e.email.toLowerCase() === viewer.email.toLowerCase())
+        : undefined);
+
+    const ownHolderKeys = new Set<string>();
+    for (const key of [
+      viewer.id,
+      viewer.employeeId,
+      viewer.entityId,
+      viewerEmp?.id,
+      viewerEmp?.employeeId,
+      viewerEnt?.id,
+      viewerEnt?.entityCode,
+    ]) {
+      if (key && key.trim()) ownHolderKeys.add(key.trim().toUpperCase());
     }
-    for (const emp of scopedEmployees) {
+
+    const viewerIsManager = isEmployeeManagerUser(viewer, allEmployees, entities);
+    const directReports = viewerIsManager
+      ? getDirectReportsForManager(
+          allEmployees,
+          viewerEnt?.id || viewerEmp?.id || viewer.entityId || viewer.employeeId,
+          viewerEmp?.email || viewerEnt?.email || viewer.email,
+          entities
+        )
+      : [];
+
+    const allowedHolderKeys = new Set<string>(ownHolderKeys);
+    for (const emp of directReports) {
       if (emp.id) allowedHolderKeys.add(emp.id.trim().toUpperCase());
       if (emp.employeeId) allowedHolderKeys.add(emp.employeeId.trim().toUpperCase());
     }
 
+    // Merge own employee + direct reports into scopedEmployees cleanly so Manager views always have complete metadata
+    const mergedEmployeesMap = new Map<string, Employee>();
+    for (const emp of scopedEmployees) {
+      mergedEmployeesMap.set(emp.id, emp);
+    }
+    if (viewerEmp && !mergedEmployeesMap.has(viewerEmp.id)) {
+      mergedEmployeesMap.set(viewerEmp.id, viewerEmp);
+    }
+    for (const dr of directReports) {
+      if (!mergedEmployeesMap.has(dr.id)) {
+        mergedEmployeesMap.set(dr.id, dr);
+      }
+    }
+    const effectiveScopedEmployees = Array.from(mergedEmployeesMap.values());
+
     const scopedAssignments = assignments.filter(
       (a) =>
         allowedHolderKeys.has((a.employeeId || '').trim().toUpperCase()) ||
-        allowedHolderKeys.has((a.assignedById || '').trim().toUpperCase())
+        ownHolderKeys.has((a.assignedById || '').trim().toUpperCase())
     );
     const scopedAssignmentIds = new Set(scopedAssignments.map((a) => a.id));
     const scopedAssetIds = new Set(scopedAssignments.map((a) => a.assetId));
 
     const scopedTickets = tickets.filter(
       (t) =>
-        allowedHolderKeys.has((t.employeeId || '').trim().toUpperCase()) ||
+        ownHolderKeys.has((t.employeeId || '').trim().toUpperCase()) ||
         scopedAssetIds.has(t.assetId)
     );
     const scopedAllotments = freelancerAllotments.filter(
       (al) =>
-        allowedHolderKeys.has((al.flpId || '').trim().toUpperCase()) ||
-        allowedHolderKeys.has((al.flpCode || '').trim().toUpperCase()) ||
-        allowedHolderKeys.has((al.executiveEmpId || '').trim().toUpperCase()) ||
+        ownHolderKeys.has((al.flpId || '').trim().toUpperCase()) ||
+        ownHolderKeys.has((al.flpCode || '').trim().toUpperCase()) ||
+        ownHolderKeys.has((al.executiveEmpId || '').trim().toUpperCase()) ||
         scopedAssignmentIds.has(al.assignmentId)
     );
     const scopedReturns = returns.filter((r) =>
-      allowedHolderKeys.has((r.employeeId || '').trim().toUpperCase())
+      ownHolderKeys.has((r.employeeId || '').trim().toUpperCase())
     );
     const scopedTransfers = transfers.filter((t) => scopedAssetIds.has(t.assetId));
 
@@ -944,7 +1039,7 @@ export function listWorkspaceStateFromDb(
       settings: cfg.settings,
       users: [],
       assets: assets.filter((a) => scopedAssetIds.has(a.id)),
-      employees: scopedEmployees,
+      employees: effectiveScopedEmployees,
       entities,
       vendors: [],
       assignments: scopedAssignments,
@@ -1085,6 +1180,127 @@ export function listFreelancerAllotmentsFromDb(db: DatabaseSync): FreelancerAllo
   });
 }
 
+function syncAssetEntryPersonAssignmentInTx(
+  db: DatabaseSync,
+  asset: Asset,
+  actor: AuditActorContext
+): Asset {
+  if (asset.status === 'Under Maintenance' || asset.status === 'Disposed') {
+    return asset;
+  }
+
+  const existingActivePrimary = db
+    .prepare(
+      `SELECT id FROM Assignments
+       WHERE asset_id = ? AND status = 'Active'
+         AND COALESCE(NULLIF(custody_level, ''), 'Primary') = 'Primary'
+       LIMIT 1`
+    )
+    .get(asset.id) as { id: string } | undefined;
+
+  if (existingActivePrimary) {
+    return asset;
+  }
+
+  const today = new Date().toISOString().split('T')[0];
+  let matchedHolderId = '';
+  let matchedHolderName = '';
+  let matchedAssigneeType: AssigneeEntityType = 'Employee';
+
+  const empCandidate = (asset.employeeName || asset.eicName || '').trim();
+  if (empCandidate) {
+    const empRow = db
+      .prepare(
+        `SELECT id, employee_id, name FROM Employees
+         WHERE LOWER(TRIM(name)) = LOWER(?) OR LOWER(TRIM(employee_id)) = LOWER(?) OR LOWER(TRIM(id)) = LOWER(?)
+         LIMIT 1`
+      )
+      .get(empCandidate, empCandidate, empCandidate) as
+      | { id: string; employee_id: string; name: string }
+      | undefined;
+    if (empRow) {
+      matchedHolderId = empRow.id;
+      matchedHolderName = empRow.name;
+      matchedAssigneeType = 'Employee';
+    }
+  }
+
+  if (!matchedHolderId) {
+    const entityCandidates: Array<{ value?: string; type: PersonnelEntity['entityType'] }> = [
+      { value: asset.consultantName, type: 'Consultant' },
+      { value: asset.retainerName, type: 'Retainer' },
+      { value: asset.yrpName, type: 'Young Research Program' },
+      { value: asset.internName, type: 'Intern' },
+    ];
+    const entities = listPersonnelEntitiesSafe(db);
+    for (const candidate of entityCandidates) {
+      const val = (candidate.value || '').trim();
+      if (!val) continue;
+      const ent = entities.find(
+        (e) =>
+          e.entityType === candidate.type &&
+          (e.name.trim().toLowerCase() === val.toLowerCase() ||
+            e.entityCode.trim().toLowerCase() === val.toLowerCase() ||
+            e.id.trim().toLowerCase() === val.toLowerCase())
+      );
+      if (ent) {
+        matchedHolderId = ent.id;
+        matchedHolderName = ent.name;
+        matchedAssigneeType = ent.entityType;
+        break;
+      }
+    }
+  }
+
+  if (!matchedHolderId) {
+    return asset;
+  }
+
+  const existingIds = (db.prepare(`SELECT id FROM Assignments`).all() as Array<{ id: string }>).map((r) => r.id);
+  const asnId = generateNextId('ASN', existingIds, 4);
+  const issueDate = asset.dateOfIssue || today;
+
+  db.prepare(`
+    INSERT INTO Assignments (
+      id, asset_id, employee_id, assignee_type, assigned_by_id, assigned_by_role,
+      parent_assignment_id, custody_level, assign_date, return_date,
+      condition, assigned_by, notes, project_name, project_no, eic_name, allotment_id, status
+    ) VALUES (?, ?, ?, ?, ?, ?, '', 'Primary', ?, '', ?, ?, ?, ?, ?, ?, '', 'Active')
+  `).run(
+    asnId,
+    asset.id,
+    matchedHolderId,
+    matchedAssigneeType,
+    actor.userId,
+    actor.userRole,
+    issueDate,
+    asset.condition || 'Good',
+    actor.userName,
+    'Assigned via Asset Entry',
+    asset.projectName || '',
+    asset.projectNo || '',
+    asset.eicName || ''
+  );
+
+  const nextAsset: Asset = {
+    ...asset,
+    status: 'Assigned',
+    dateOfIssue: issueDate,
+  };
+  db.prepare(`UPDATE Assets SET status = 'Assigned', date_of_issue = ? WHERE id = ?`).run(
+    issueDate,
+    asset.id
+  );
+  addAssetHistoryInDb(db, {
+    assetId: asset.id,
+    date: issueDate,
+    activity: 'Assigned',
+    details: `Assigned to ${matchedHolderName} (${matchedAssigneeType}) via Asset Entry`,
+  });
+
+  return nextAsset;
+}
+
 export function createAssetInDb(
   db: DatabaseSync,
   payload: Omit<Asset, 'id'> & { id?: string },
@@ -1102,7 +1318,7 @@ export function createAssetInDb(
       salvageValue: Number(payload.salvageValue) || 0,
       method: payload.depMethod || 'SLM',
     });
-  const asset: Asset = {
+  let asset: Asset = {
     ...payload,
     id,
     currentValue: currentVal,
@@ -1119,6 +1335,7 @@ export function createAssetInDb(
       activity: 'Purchased',
       details: `Purchased for ${cfg.settings.currency}${Number(asset.cost).toLocaleString()}. Serial No: ${asset.serial}. Brand: ${asset.brand || '—'}`,
     });
+    asset = syncAssetEntryPersonAssignmentInTx(db, asset, actor);
     writeSystemAuditLog(db, {
       module: 'Asset',
       entityType: 'Asset',
@@ -1145,7 +1362,7 @@ export function updateAssetInDb(
 ): Asset | null {
   const existing = listAssetsFromDb(db).find((a) => a.id === id);
   if (!existing) return null;
-  const updated: Asset = { ...existing, ...payload, id };
+  let updated: Asset = { ...existing, ...payload, id };
   const today = new Date().toISOString().split('T')[0];
 
   db.exec('BEGIN IMMEDIATE');
@@ -1157,6 +1374,7 @@ export function updateAssetInDb(
       activity: 'Updated',
       details: `Asset details updated (${updated.name}).`,
     });
+    updated = syncAssetEntryPersonAssignmentInTx(db, updated, actor);
     writeSystemAuditLog(db, {
       module: 'Asset',
       entityType: 'Asset',
@@ -2069,7 +2287,7 @@ export function addQuickOptionInDb(
 
 export function importAssetsInDb(
   db: DatabaseSync,
-  items: Array<Omit<Asset, 'id'>>,
+  items: Array<Omit<Asset, 'id'> & { id?: string }>,
   actor: AuditActorContext
 ): Asset[] {
   const existingIds = (db.prepare(`SELECT id FROM Assets`).all() as Array<{ id: string }>).map((r) => r.id);
@@ -2080,9 +2298,10 @@ export function importAssetsInDb(
   try {
     const stmt = insertAssetStmt(db);
     for (const item of items) {
-      const id = generateNextId('AST', existingIds, 4);
+      const requestedId = item.id ? item.id.trim().toUpperCase() : '';
+      const id = requestedId && !existingIds.includes(requestedId) ? requestedId : generateNextId('AST', existingIds, 4);
       existingIds.push(id);
-      const ast: Asset = { ...item, id };
+      let ast: Asset = { ...item, id };
       runInsertAsset(stmt, ast);
       addAssetHistoryInDb(db, {
         assetId: id,
@@ -2090,6 +2309,7 @@ export function importAssetsInDb(
         activity: 'Purchased',
         details: `Imported via CSV (${ast.name}, S/N: ${ast.serial})`,
       });
+      ast = syncAssetEntryPersonAssignmentInTx(db, ast, actor);
       created.push(ast);
     }
 

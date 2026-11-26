@@ -35,7 +35,7 @@ import {
   calculateWarrantyExpiry,
   formatCurrency,
 } from '../utils/assetMath';
-import { EXTENDED_ASSET_FIELDS } from '../utils/assetExport';
+import { EXTENDED_ASSET_FIELDS, resolveAssetAssigneeColumns } from '../utils/assetExport';
 import { PERSONNEL_ENTITY_TYPES } from '../utils/entityValidation';
 import { AssetThumbnail } from './AssetThumbnail';
 import {
@@ -136,6 +136,7 @@ export const AssetFormModal: React.FC<{
     editingAsset?.location || state.locations[0] || 'Floor 1'
   );
   const [condition, setCondition] = useState<AssetCondition>(editingAsset?.condition || 'Good');
+  const [status, setStatus] = useState<AssetStatus>(editingAsset?.status || 'Available');
   const [description, setDescription] = useState(editingAsset?.description || '');
   const [image, setImage] = useState(editingAsset?.image || '');
   const [showDep, setShowDep] = useState(Boolean(editingAsset));
@@ -145,6 +146,34 @@ export const AssetFormModal: React.FC<{
   );
   const [salvageValue, setSalvageValue] = useState(
     editingAsset ? String(editingAsset.salvageValue) : '0'
+  );
+
+  const initialPersonColumns = editingAsset
+    ? resolveAssetAssigneeColumns({
+        asset: editingAsset,
+        assignments: state.assignments,
+        employees: state.employees,
+        entities: state.entities || [],
+      })
+    : null;
+
+  const [employeeName, setEmployeeName] = useState(
+    editingAsset?.employeeName || initialPersonColumns?.employeeName || ''
+  );
+  const [consultantName, setConsultantName] = useState(
+    editingAsset?.consultantName || initialPersonColumns?.consultantName || ''
+  );
+  const [retainerName, setRetainerName] = useState(
+    editingAsset?.retainerName || initialPersonColumns?.retainerName || ''
+  );
+  const [freelancerName, setFreelancerName] = useState(
+    editingAsset?.freelancerName || initialPersonColumns?.freelancerName || ''
+  );
+  const [yrpName, setYrpName] = useState(
+    editingAsset?.yrpName || initialPersonColumns?.yrpName || ''
+  );
+  const [internName, setInternName] = useState(
+    editingAsset?.internName || initialPersonColumns?.internName || ''
   );
 
   // Extended non-duplicate fieldwork & hardware attributes
@@ -160,6 +189,7 @@ export const AssetFormModal: React.FC<{
   const [quickAddKind, setQuickAddKind] = useState<'category' | 'department' | 'location' | null>(null);
   const [quickAddValue, setQuickAddValue] = useState('');
 
+  const entities = state.entities || [];
   const warrantyExpiry = calculateWarrantyExpiry(purchaseDate, parseInt(warrantyMonths, 10) || 0);
   const currentBookValue = calculateBookValue({
     cost: parseFloat(cost) || 0,
@@ -177,6 +207,12 @@ export const AssetFormModal: React.FC<{
       const val = (extendedValues[String(spec.key)] || '').trim();
       extendedPayload[String(spec.key)] = val || undefined;
     }
+    const cleanEmployeeName = employeeName.trim() || undefined;
+    const cleanConsultantName = consultantName.trim() || undefined;
+    const cleanRetainerName = retainerName.trim() || undefined;
+    const cleanFreelancerName = freelancerName.trim() || undefined;
+    const cleanYrpName = yrpName.trim() || undefined;
+    const cleanInternName = internName.trim() || undefined;
     const manualId = !editingAsset && customAssetId.trim() ? customAssetId.trim().toUpperCase() : undefined;
     onSave({
       id: editingAsset?.id || manualId,
@@ -195,7 +231,7 @@ export const AssetFormModal: React.FC<{
       department,
       location,
       condition,
-      status: editingAsset?.status || 'Available',
+      status,
       depMethod,
       usefulLife: parseInt(usefulLife, 10) || 5,
       salvageValue: parseFloat(salvageValue) || 0,
@@ -203,6 +239,14 @@ export const AssetFormModal: React.FC<{
       description,
       image: image.trim() || undefined,
       ...extendedPayload,
+      eicName: extendedPayload.eicName || cleanEmployeeName,
+      assignedFlp: extendedPayload.assignedFlp || cleanFreelancerName,
+      employeeName: cleanEmployeeName,
+      consultantName: cleanConsultantName,
+      retainerName: cleanRetainerName,
+      freelancerName: cleanFreelancerName,
+      yrpName: cleanYrpName,
+      internName: cleanInternName,
     });
   };
 
@@ -356,7 +400,7 @@ export const AssetFormModal: React.FC<{
             </div>
             <div>
               <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                Model Number
+                Model
               </label>
               <input
                 type="text"
@@ -413,7 +457,7 @@ export const AssetFormModal: React.FC<{
                 htmlFor="asset-cost-input"
                 className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1"
               >
-                Purchase Cost *
+                Cost *
               </label>
               <input
                 id="asset-cost-input"
@@ -428,10 +472,29 @@ export const AssetFormModal: React.FC<{
               />
             </div>
             <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                Vendor
+              <label
+                htmlFor="asset-book-value-display"
+                className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1"
+              >
+                Book Value
+              </label>
+              <input
+                id="asset-book-value-display"
+                type="text"
+                readOnly
+                value={formatCurrency(currentBookValue, currency)}
+                className="w-full px-3 py-2 bg-[#f0fdf4] border border-[#bbf7d0] rounded-lg text-xs font-bold text-[#166534] tabular-nums cursor-not-allowed"
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="asset-vendor-select"
+                className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1"
+              >
+                Vendor / Supplier
               </label>
               <select
+                id="asset-vendor-select"
                 value={vendor}
                 onChange={(e) => setVendor(e.target.value)}
                 className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-600 focus:outline-none"
@@ -445,13 +508,39 @@ export const AssetFormModal: React.FC<{
               </select>
             </div>
             <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                Invoice Number
+              <label
+                htmlFor="asset-ext-vendorSupplierName"
+                className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1"
+              >
+                Vendor / Supplier Name
               </label>
               <input
+                id="asset-ext-vendorSupplierName"
+                type="text"
+                value={extendedValues.vendorSupplierName || ''}
+                onChange={(e) =>
+                  setExtendedValues((prev) => ({
+                    ...prev,
+                    vendorSupplierName: e.target.value,
+                  }))
+                }
+                placeholder="Supplier legal name"
+                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-600 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="asset-invoice-input"
+                className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1"
+              >
+                Invoice No.
+              </label>
+              <input
+                id="asset-invoice-input"
                 type="text"
                 value={invoiceNumber}
                 onChange={(e) => setInvoiceNumber(e.target.value)}
+                placeholder="e.g. INV-2026-001"
                 className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-600 focus:outline-none"
               />
             </div>
@@ -468,10 +557,14 @@ export const AssetFormModal: React.FC<{
               />
             </div>
             <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                Warranty Expiry Date (Auto)
+              <label
+                htmlFor="asset-warranty-expiry"
+                className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1"
+              >
+                Warranty Expiry
               </label>
               <input
+                id="asset-warranty-expiry"
                 type="date"
                 readOnly
                 value={warrantyExpiry}
@@ -481,13 +574,13 @@ export const AssetFormModal: React.FC<{
           </div>
         </div>
 
-        {/* Asset Information */}
+        {/* Asset Status, Placement & Condition */}
         <div>
           <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3 flex items-center gap-2 border-b pb-2">
             <FolderOpen className="w-3.5 h-3.5 text-slate-400" />
-            <span>Asset Information</span>
+            <span>Status, Location &amp; Condition</span>
           </h4>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
             <div>
               <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1 flex justify-between items-center">
                 <span>Department</span>
@@ -501,6 +594,7 @@ export const AssetFormModal: React.FC<{
                 </button>
               </label>
               <select
+                aria-label="Department"
                 value={department}
                 onChange={(e) => setDepartment(e.target.value)}
                 className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-600 focus:outline-none"
@@ -525,6 +619,7 @@ export const AssetFormModal: React.FC<{
                 </button>
               </label>
               <select
+                aria-label="Location"
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
                 className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-600 focus:outline-none"
@@ -537,10 +632,33 @@ export const AssetFormModal: React.FC<{
               </select>
             </div>
             <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                Asset Condition
+              <label
+                htmlFor="asset-status-select"
+                className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1"
+              >
+                Status
               </label>
               <select
+                id="asset-status-select"
+                value={status}
+                onChange={(e) => setStatus(e.target.value as AssetStatus)}
+                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-600 focus:outline-none"
+              >
+                <option value="Available">Available</option>
+                <option value="Assigned">Assigned</option>
+                <option value="Under Maintenance">Under Maintenance</option>
+                <option value="Disposed">Disposed</option>
+              </select>
+            </div>
+            <div>
+              <label
+                htmlFor="asset-condition-select"
+                className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1"
+              >
+                Condition
+              </label>
+              <select
+                id="asset-condition-select"
                 value={condition}
                 onChange={(e) => setCondition(e.target.value as AssetCondition)}
                 className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-600 focus:outline-none"
@@ -549,19 +667,176 @@ export const AssetFormModal: React.FC<{
                 <option value="Good">Good</option>
                 <option value="Fair">Fair</option>
                 <option value="Damaged">Damaged</option>
+                <option value="Poor">Poor</option>
               </select>
             </div>
           </div>
         </div>
 
-        {/* Extended Hardware & Fieldwork Attributes (17 non-duplicate fields) */}
+        {/* Person Assignment Fields (6 role categories) */}
+        <div>
+          <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3 flex items-center gap-2 border-b pb-2">
+            <Handshake className="w-3.5 h-3.5 text-slate-400" />
+            <span>Person Assignment Fields</span>
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label
+                htmlFor="asset-person-employee"
+                className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1"
+              >
+                Employee Name
+              </label>
+              <input
+                id="asset-person-employee"
+                list="asset-person-employee-list"
+                type="text"
+                value={employeeName}
+                onChange={(e) => setEmployeeName(e.target.value)}
+                placeholder="Select or type employee name"
+                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-600 focus:outline-none"
+              />
+              <datalist id="asset-person-employee-list">
+                {state.employees
+                  .filter((emp) => emp.status !== 'Inactive')
+                  .map((emp) => (
+                    <option key={emp.id} value={emp.name} />
+                  ))}
+              </datalist>
+            </div>
+            <div>
+              <label
+                htmlFor="asset-person-consultant"
+                className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1"
+              >
+                Consultant Name
+              </label>
+              <input
+                id="asset-person-consultant"
+                list="asset-person-consultant-list"
+                type="text"
+                value={consultantName}
+                onChange={(e) => setConsultantName(e.target.value)}
+                placeholder="Select or type consultant name"
+                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-600 focus:outline-none"
+              />
+              <datalist id="asset-person-consultant-list">
+                {entities
+                  .filter((ent) => ent.entityType === 'Consultant' && ent.status !== 'Inactive')
+                  .map((ent) => (
+                    <option key={ent.id} value={ent.name} />
+                  ))}
+              </datalist>
+            </div>
+            <div>
+              <label
+                htmlFor="asset-person-retainer"
+                className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1"
+              >
+                Retainer Name
+              </label>
+              <input
+                id="asset-person-retainer"
+                list="asset-person-retainer-list"
+                type="text"
+                value={retainerName}
+                onChange={(e) => setRetainerName(e.target.value)}
+                placeholder="Select or type retainer name"
+                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-600 focus:outline-none"
+              />
+              <datalist id="asset-person-retainer-list">
+                {entities
+                  .filter((ent) => ent.entityType === 'Retainer' && ent.status !== 'Inactive')
+                  .map((ent) => (
+                    <option key={ent.id} value={ent.name} />
+                  ))}
+              </datalist>
+            </div>
+            <div>
+              <label
+                htmlFor="asset-person-freelancer"
+                className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1"
+              >
+                Freelancer Name
+              </label>
+              <input
+                id="asset-person-freelancer"
+                list="asset-person-freelancer-list"
+                type="text"
+                value={freelancerName}
+                onChange={(e) => setFreelancerName(e.target.value)}
+                placeholder="Select or type freelancer name"
+                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-600 focus:outline-none"
+              />
+              <datalist id="asset-person-freelancer-list">
+                {entities
+                  .filter((ent) => ent.entityType === 'Freelancer' && ent.status !== 'Inactive')
+                  .map((ent) => (
+                    <option key={ent.id} value={ent.name} />
+                  ))}
+              </datalist>
+            </div>
+            <div>
+              <label
+                htmlFor="asset-person-yrp"
+                className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1"
+              >
+                Young Research Program Name
+              </label>
+              <input
+                id="asset-person-yrp"
+                list="asset-person-yrp-list"
+                type="text"
+                value={yrpName}
+                onChange={(e) => setYrpName(e.target.value)}
+                placeholder="Select or type YRP member name"
+                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-600 focus:outline-none"
+              />
+              <datalist id="asset-person-yrp-list">
+                {entities
+                  .filter(
+                    (ent) => ent.entityType === 'Young Research Program' && ent.status !== 'Inactive'
+                  )
+                  .map((ent) => (
+                    <option key={ent.id} value={ent.name} />
+                  ))}
+              </datalist>
+            </div>
+            <div>
+              <label
+                htmlFor="asset-person-intern"
+                className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1"
+              >
+                Intern Name
+              </label>
+              <input
+                id="asset-person-intern"
+                list="asset-person-intern-list"
+                type="text"
+                value={internName}
+                onChange={(e) => setInternName(e.target.value)}
+                placeholder="Select or type intern name"
+                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-600 focus:outline-none"
+              />
+              <datalist id="asset-person-intern-list">
+                {entities
+                  .filter((ent) => ent.entityType === 'Intern' && ent.status !== 'Inactive')
+                  .map((ent) => (
+                    <option key={ent.id} value={ent.name} />
+                  ))}
+              </datalist>
+            </div>
+          </div>
+        </div>
+
+        {/* Extended Hardware & Fieldwork Attributes (non-duplicate fields) */}
         <div>
           <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3 flex items-center gap-2 border-b pb-2">
             <Layers className="w-3.5 h-3.5 text-slate-400" />
             <span>Extended Hardware &amp; Fieldwork Details</span>
           </h4>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {EXTENDED_ASSET_FIELDS.map((spec) => {
+            {EXTENDED_ASSET_FIELDS.filter((spec) => spec.key !== 'vendorSupplierName').map((spec) => {
               const fieldId = `asset-ext-${String(spec.key)}`;
               return (
                 <div key={String(spec.key)}>

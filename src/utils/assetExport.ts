@@ -1,11 +1,14 @@
 import type {
   Asset,
+  AssetCondition,
+  AssetStatus,
   Assignment,
   Employee,
   PersonnelEntity,
   PersonnelEntityType,
 } from '../types/asset';
-import { calculateBookValue } from './assetMath';
+import { calculateBookValue, calculateWarrantyExpiry } from './assetMath';
+import { parseCsvRows } from './employeeImport';
 
 /**
  * Existing Asset schema fields that MUST NOT be duplicated when integrating
@@ -208,11 +211,26 @@ export function resolveAssetAssigneeColumns(params: {
     if (!out.eicName && asn.eicName) out.eicName = asn.eicName;
   }
 
-  if (!out.freelancerName && asset.assignedFlp) {
-    out.freelancerName = asset.assignedFlp;
+  if (!out.employeeName && asset.employeeName) {
+    out.employeeName = asset.employeeName;
+  }
+  if (!out.consultantName && asset.consultantName) {
+    out.consultantName = asset.consultantName;
+  }
+  if (!out.retainerName && asset.retainerName) {
+    out.retainerName = asset.retainerName;
+  }
+  if (!out.freelancerName && (asset.freelancerName || asset.assignedFlp)) {
+    out.freelancerName = asset.freelancerName || asset.assignedFlp || '';
   }
   if (!out.freelancerCode && asset.flpId) {
     out.freelancerCode = asset.flpId;
+  }
+  if (!out.yrpName && asset.yrpName) {
+    out.yrpName = asset.yrpName;
+  }
+  if (!out.internName && asset.internName) {
+    out.internName = asset.internName;
   }
 
   if (!out.returnDate) {
@@ -298,4 +316,210 @@ export function buildInventoryCsvExport(params: {
     INVENTORY_EXPORT_HEADERS.map(escapeCsvCell).join(','),
     ...rows.map((r) => r.join(',')),
   ].join('\n');
+}
+
+export function buildAssetTemplateCsv(): string {
+  const today = new Date().toISOString().split('T')[0];
+  const sampleRow = [
+    '', // Asset ID (auto-generated if blank)
+    'Rahim Ahmed', // Employee Name
+    '', // Consultant Name
+    '', // Retainer Name
+    '', // Freelancer Name
+    '', // Young Research Program Name
+    '', // Intern Name
+    'Dell Latitude 5440', // Name / Asset Name
+    'Laptop', // Category
+    'Dell', // Brand
+    'SN-LAT5440-1001', // Serial
+    'IT', // Department
+    'Floor 1', // Location
+    'Assigned', // Status
+    'New', // Condition
+    '85000', // Cost
+    '85000', // Book Value
+    'Latitude 5440', // Model
+    'RMN-5440-IN', // RMN Number
+    'PN-LAT-01', // Part Number
+    '8901234567890', // EAN Number
+    '', // IMEI / Device ID 1
+    '', // IMEI / Device ID 2
+    'SNID-9081', // SNID Number
+    today, // Purchase Date
+    'Infosystem Pvt Ltd', // Vendor / Supplier
+    'Infosystem Pvt Ltd', // Vendor / Supplier Name
+    'INV-2026-101', // Invoice No.
+    calculateWarrantyExpiry(today, 36), // Warranty Expiry
+    'National Field Study', // PROJECT NAME
+    'JOB-2026-01', // PROJECT NO
+    'Rahim Ahmed', // Assigned Employee
+    '', // Assigned Freelancer
+    '', // Freelancer ID
+    today, // Date of Issue
+    '', // Date of Return
+    'Laptop Bag, Charger', // Accessories Issued
+    today, // Last Verification Date
+    'Asset entry template sample row', // Remarks
+  ].map(escapeCsvCell);
+
+  return [
+    INVENTORY_EXPORT_HEADERS.map(escapeCsvCell).join(','),
+    sampleRow.join(','),
+  ].join('\n');
+}
+
+function normalizeCsvHeader(header: string): string {
+  return header
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+const VALID_STATUSES = new Set<AssetStatus>([
+  'Available',
+  'Assigned',
+  'Under Maintenance',
+  'Disposed',
+]);
+
+const VALID_CONDITIONS = new Set<AssetCondition>([
+  'New',
+  'Good',
+  'Fair',
+  'Damaged',
+  'Poor',
+]);
+
+export function parseAssetImportCsvRows(
+  csvText: string
+): Array<Omit<Asset, 'id'> & { id?: string }> {
+  const rows = parseCsvRows(csvText);
+  if (rows.length < 2) return [];
+
+  const headerRow = rows[0].map((h) => normalizeCsvHeader(h));
+  const headerIndex = new Map<string, number>();
+  headerRow.forEach((key, idx) => {
+    if (key && !headerIndex.has(key)) headerIndex.set(key, idx);
+  });
+
+  const hasTemplateHeaders =
+    headerIndex.has('asset name') ||
+    headerIndex.has('name') ||
+    headerIndex.has('serial number') ||
+    headerIndex.has('serial');
+
+  const today = new Date().toISOString().split('T')[0];
+  const items: Array<Omit<Asset, 'id'> & { id?: string }> = [];
+
+  for (let i = 1; i < rows.length; i++) {
+    const cols = rows[i].map((c) => c.trim());
+    if (cols.every((c) => !c)) continue;
+
+    if (!hasTemplateHeaders) {
+      if (!cols[0]) continue;
+      const cost = parseFloat(cols[4]) || 0;
+      items.push({
+        name: cols[0],
+        category: cols[1] || 'Laptop',
+        subcategory: '',
+        brand: cols[2] || '',
+        serial: cols[3] || `SN-${Date.now()}-${i}`,
+        purchaseDate: today,
+        cost,
+        vendor: '',
+        warrantyMonths: 24,
+        warrantyExpiry: calculateWarrantyExpiry(today, 24),
+        department: cols[5] || 'IT',
+        location: 'Floor 1',
+        condition: 'Good',
+        status: 'Available',
+        depMethod: 'SLM',
+        usefulLife: 5,
+        salvageValue: 0,
+        currentValue: cost,
+        description: 'Imported via CSV',
+      });
+      continue;
+    }
+
+    const pick = (...aliases: string[]): string => {
+      for (const alias of aliases) {
+        const idx = headerIndex.get(normalizeCsvHeader(alias));
+        if (idx !== undefined && cols[idx] !== undefined && cols[idx] !== '') {
+          return cols[idx];
+        }
+      }
+      return '';
+    };
+
+    const name = pick('Asset Name', 'Name');
+    if (!name) continue;
+
+    const rawId = pick('Asset ID');
+    const rawStatus = pick('Status', 'Current Status') as AssetStatus;
+    const rawCondition = pick('Condition', 'Device Condition') as AssetCondition;
+    const cost = parseFloat(pick('Cost', 'Purchase Cost', 'Purchase Cost (₹)')) || 0;
+    const bookValRaw = parseFloat(pick('Book Value', 'Current Value'));
+    const purchaseDate = pick('Purchase Date') || today;
+    const warrantyExpiry =
+      pick('Warranty Expiry') || calculateWarrantyExpiry(purchaseDate, 24);
+    const serial = pick('Serial Number', 'Serial') || `SN-${Date.now()}-${i}`;
+    const employeeName = pick('Employee Name') || undefined;
+    const consultantName = pick('Consultant Name') || undefined;
+    const retainerName = pick('Retainer Name') || undefined;
+    const freelancerName = pick('Freelancer Name') || undefined;
+    const yrpName = pick('Young Research Program Name', 'YRP Name') || undefined;
+    const internName = pick('Intern Name') || undefined;
+    const assignedFlp = pick('Assigned Freelancer') || freelancerName || undefined;
+
+    items.push({
+      id: rawId ? rawId.toUpperCase() : undefined,
+      name,
+      category: pick('Category') || 'Laptop',
+      subcategory: pick('Sub Category', 'Subcategory') || '',
+      brand: pick('Brand') || '',
+      model: pick('Model', 'Model Number') || undefined,
+      serial,
+      rmnNumber: pick('RMN Number') || undefined,
+      partNumber: pick('Part Number') || undefined,
+      eanNumber: pick('EAN Number') || undefined,
+      imei1: pick('IMEI / Device ID 1', 'IMEI 1') || undefined,
+      imei2: pick('IMEI / Device ID 2', 'IMEI 2') || undefined,
+      snidNumber: pick('SNID Number') || undefined,
+      purchaseDate,
+      cost,
+      vendor: pick('Vendor / Supplier', 'Vendor') || '',
+      vendorSupplierName: pick('Vendor / Supplier Name') || undefined,
+      invoiceNumber: pick('Invoice No.', 'Invoice No', 'Invoice Number') || undefined,
+      warrantyMonths: parseInt(pick('Warranty (Months)', 'Warranty Months'), 10) || 24,
+      warrantyExpiry,
+      department: pick('Department') || 'IT',
+      location: pick('Location', 'Office / Location') || 'Floor 1',
+      condition: VALID_CONDITIONS.has(rawCondition) ? rawCondition : 'Good',
+      status: VALID_STATUSES.has(rawStatus) ? rawStatus : 'Available',
+      depMethod: 'SLM',
+      usefulLife: 5,
+      salvageValue: 0,
+      currentValue: Number.isFinite(bookValRaw) ? bookValRaw : cost,
+      description: pick('Description') || 'Imported via CSV',
+      projectName: pick('PROJECT NAME', 'Project Name') || undefined,
+      projectNo: pick('PROJECT NO', 'Project No') || undefined,
+      eicName: pick('Assigned Employee') || employeeName || undefined,
+      assignedFlp,
+      flpId: pick('Freelancer ID') || undefined,
+      dateOfIssue: pick('Date of Issue') || undefined,
+      dateOfReturn: pick('Date of Return') || undefined,
+      accessoriesIssued: pick('Accessories Issued') || undefined,
+      lastVerificationDate: pick('Last Verification Date') || undefined,
+      remarks: pick('Remarks') || undefined,
+      employeeName,
+      consultantName,
+      retainerName,
+      freelancerName,
+      yrpName,
+      internName,
+    });
+  }
+
+  return items;
 }

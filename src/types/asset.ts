@@ -114,6 +114,12 @@ export interface Asset {
   accessoriesIssued?: string;
   lastVerificationDate?: string;
   remarks?: string;
+  employeeName?: string;
+  consultantName?: string;
+  retainerName?: string;
+  freelancerName?: string;
+  yrpName?: string;
+  internName?: string;
 }
 
 export type PersonnelEntityType =

@@ -242,6 +242,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 )}
                 {(isSuperAdmin || isDesignatedManager) &&
                   renderLink({ id: 'team-members', label: 'Team Members', icon: UserCheck })}
+                {isDesignatedManager &&
+                  renderLink({ id: 'my-assets', label: 'Manager Assets', icon: Laptop })}
                 {canViewAttendance &&
                   renderLink({
                     id: 'attendance',

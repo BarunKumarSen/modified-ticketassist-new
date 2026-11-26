@@ -84,11 +84,9 @@ export function canUserAccessEmployee(
     return true;
   }
   const userEmpKey = user.employeeId?.trim().toUpperCase();
-  if (
-    userEmpKey &&
-    employee.reportingManagerId &&
-    employee.reportingManagerId.trim().toUpperCase() === userEmpKey
-  ) {
+  const userEntityKey = user.entityId?.trim().toUpperCase();
+  const mgrKey = employee.reportingManagerId?.trim().toUpperCase();
+  if (mgrKey && ((userEmpKey && mgrKey === userEmpKey) || (userEntityKey && mgrKey === userEntityKey))) {
     return true;
   }
   if (

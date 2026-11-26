@@ -328,14 +328,14 @@ export function getScopedEmployeeData(params: {
   const holderId = entity?.id || employee?.id;
   const scopedAssets = holderId
     ? assets.filter((asset) => isAssetOwnedBy(asset, holderId, assignments, employees, entities))
-    : assets.filter((a) => a.status !== 'Disposed');
+    : [];
 
-  const selectableAssets =
+  const ticketSelectableAssets =
     scopedAssets.length === 0 && isMgrRole ? assets.filter((a) => a.status !== 'Disposed') : scopedAssets;
 
-  const ownedAssetIds = new Set(selectableAssets.map((a) => a.id));
+  const ownedAssetIds = new Set(ticketSelectableAssets.map((a) => a.id));
 
-  const ownedAssets: OwnedAssetSummary[] = selectableAssets.map((asset) => {
+  const ownedAssets: OwnedAssetSummary[] = scopedAssets.map((asset) => {
     const activeAssignment = assignments.find(
       (asn) =>
         asn.status === 'Active' &&
@@ -377,7 +377,7 @@ export function getScopedEmployeeData(params: {
     employee,
     entity,
     ownedAssets,
-    assets: selectableAssets,
+    assets: ticketSelectableAssets,
     tickets: scopedTickets,
     maintenance: scopedMaintenance,
     openTicketsCount: scopedTickets.filter((t) => t.status === 'Open' || t.status === 'Requested').length,

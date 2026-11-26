@@ -43,6 +43,7 @@ import { SettingsView } from './components/SettingsView';
 import { AttendanceView } from './components/AttendanceView';
 import { MailDashboardView } from './components/MailDashboardView';
 import { parseCsvRows } from './utils/employeeImport';
+import { parseAssetImportCsvRows } from './utils/assetExport';
 import {
   AssetFormModal,
   AssignModal,
@@ -508,41 +509,9 @@ function AppContent() {
   };
 
   const handleImportAssetsCSV = (csvText: string) => {
-    const rows = parseCsvRows(csvText);
-    if (rows.length < 2) {
-      showToast('CSV file is empty or missing data rows', 'error');
-      return;
-    }
-    const today = new Date().toISOString().split('T')[0];
-    const items: Array<Omit<Asset, 'id'>> = [];
-    for (let i = 1; i < rows.length; i++) {
-      const cols = rows[i].map((c) => c.trim());
-      if (!cols[0]) continue;
-      const cost = parseFloat(cols[4]) || 0;
-      items.push({
-        name: cols[0],
-        category: cols[1] || 'Laptop',
-        subcategory: '',
-        brand: cols[2] || '',
-        serial: cols[3] || `SN-${Date.now()}-${i}`,
-        purchaseDate: today,
-        cost,
-        vendor: '',
-        warrantyMonths: 24,
-        warrantyExpiry: today,
-        department: cols[5] || 'IT',
-        location: 'Floor 1',
-        condition: 'Good',
-        status: 'Available',
-        depMethod: 'SLM',
-        usefulLife: 5,
-        salvageValue: 0,
-        currentValue: cost,
-        description: 'Imported via CSV',
-      });
-    }
+    const items = parseAssetImportCsvRows(csvText);
     if (items.length === 0) {
-      showToast('No valid asset rows found in CSV', 'error');
+      showToast('CSV file is empty or has no valid asset rows', 'error');
       return;
     }
     void (async () => {
@@ -1072,7 +1041,11 @@ function AppContent() {
           globalSearch={globalSearch}
           onGlobalSearchChange={handleGlobalSearch}
           maintenance={isSelfServiceUser ? scopedEmployeeData?.maintenance || [] : state.maintenance}
-          assets={isSelfServiceUser ? scopedEmployeeData?.assets || [] : state.assets}
+          assets={
+            isSelfServiceUser
+              ? scopedEmployeeData?.ownedAssets.map((o) => o.asset) || []
+              : state.assets
+          }
           companyName={state.settings.companyName}
           onNavigate={(tab) => handleNavigate(tab)}
           onOpenMobileNav={() => setMobileNavOpen(true)}
@@ -1086,6 +1059,10 @@ function AppContent() {
               {isSelfServiceUser && scopedEmployeeData ? (
                 <EmployeeDashboardView
                   scopedData={scopedEmployeeData}
+                  employees={apiEmployees ?? state.employees}
+                  entities={state.entities || []}
+                  assets={state.assets}
+                  assignments={state.assignments}
                   onNavigate={(tab) => handleNavigate(tab)}
                   onOpenPolicy={(category) => {
                     setSelectedPolicyCategory(category);
@@ -1094,6 +1071,14 @@ function AppContent() {
                   onRaiseTicket={(assetId) =>
                     setActiveModal({ type: 'ticket', preselectedAssetId: assetId })
                   }
+                  onSubAssign={(assetId, parentAssignmentId) =>
+                    setActiveModal({
+                      type: 'sub-assign',
+                      preselectedAssetId: assetId,
+                      preselectedParentAssignmentId: parentAssignmentId,
+                    })
+                  }
+                  onReturnSubAssign={handleReturnSubAssignment}
                 />
               ) : isAssetOpsRole ? (
                 <DashboardView
@@ -1137,6 +1122,8 @@ function AppContent() {
             <RequireRole
               roles={[
                 'Employee',
+                'Manager',
+                'Department Manager',
                 'Consultant',
                 'Retainer',
                 'Freelancer',
@@ -1150,6 +1137,10 @@ function AppContent() {
                 <MyAssetsView
                   key={globalSearch}
                   scopedData={scopedEmployeeData}
+                  employees={apiEmployees ?? state.employees}
+                  entities={state.entities || []}
+                  assets={state.assets}
+                  assignments={state.assignments}
                   initialSearch={globalSearch}
                   onRaiseTicket={(assetId) =>
                     setActiveModal({ type: 'ticket', preselectedAssetId: assetId })

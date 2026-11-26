@@ -31,7 +31,7 @@ import {
   formatCurrency,
   paginateItems,
 } from '../utils/assetMath';
-import { buildInventoryCsvExport } from '../utils/assetExport';
+import { buildAssetTemplateCsv, buildInventoryCsvExport } from '../utils/assetExport';
 import { resolveCustodySummaryForAsset } from '../utils/entityValidation';
 import { AssetThumbnail } from './AssetThumbnail';
 
@@ -132,6 +132,17 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
     URL.revokeObjectURL(url);
   };
 
+  const handleDownloadTemplateCSV = () => {
+    const csv = buildAssetTemplateCsv();
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'asset-entry-template.csv';
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -154,28 +165,40 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2 no-print">
-          <button
-            type="button"
-            onClick={() => onOpenModal({ type: 'asset' })}
-            className={`${palette.primaryBtn} ${palette.primaryBtnHover} px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm flex items-center gap-1.5 cursor-pointer whitespace-nowrap`}
-          >
-            <Plus className="w-3.5 h-3.5" /> New
-          </button>
+          {canWrite && (
+            <>
+              <button
+                type="button"
+                onClick={() => onOpenModal({ type: 'asset' })}
+                className={`${palette.primaryBtn} ${palette.primaryBtnHover} px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm flex items-center gap-1.5 cursor-pointer whitespace-nowrap`}
+              >
+                <Plus className="w-3.5 h-3.5" /> New
+              </button>
 
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".csv,text/csv"
-            onChange={handleFileChange}
-            className="hidden"
-          />
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 dark:bg-slate-800 dark:text-slate-100 dark:border-slate-700 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5" /> Import CSV
-          </button>
+              <button
+                type="button"
+                onClick={handleDownloadTemplateCSV}
+                className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 dark:bg-slate-800 dark:text-emerald-300 dark:border-slate-700 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+              >
+                <Download className="w-3.5 h-3.5" /> Template CSV
+              </button>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                onChange={handleFileChange}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 dark:bg-slate-800 dark:text-slate-100 dark:border-slate-700 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" /> Import CSV
+              </button>
+            </>
+          )}
 
           <div className="relative">
             <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
@@ -423,37 +446,41 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                       >
                         <History className="w-3.5 h-3.5" />
                       </button>
-                      <button
-                        type="button"
-                        aria-label={`Assign ${ast.name}`}
-                        disabled={ast.status === 'Disposed'}
-                        onClick={() => onOpenModal({ type: 'assign', preselectedAssetId: ast.id })}
-                        title="Assign"
-                        className="w-7 h-7 rounded bg-[#dcfce7] text-[#166534] hover:bg-[#bbf7d0] disabled:opacity-40 flex items-center justify-center transition-colors cursor-pointer"
-                      >
-                        <UserPlus className="w-3.5 h-3.5" />
-                      </button>
+                      {canWrite && (
+                        <button
+                          type="button"
+                          aria-label={`Assign ${ast.name}`}
+                          disabled={ast.status === 'Disposed'}
+                          onClick={() => onOpenModal({ type: 'assign', preselectedAssetId: ast.id })}
+                          title="Assign"
+                          className="w-7 h-7 rounded bg-[#dcfce7] text-[#166534] hover:bg-[#bbf7d0] disabled:opacity-40 flex items-center justify-center transition-colors cursor-pointer"
+                        >
+                          <UserPlus className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
-                    <div className="flex space-x-1">
-                      <button
-                        type="button"
-                        aria-label={`Edit ${ast.name}`}
-                        onClick={() => onOpenModal({ type: 'asset', assetId: ast.id })}
-                        title="Edit"
-                        className="w-7 h-7 rounded bg-[#ffedd5] text-[#c2410c] hover:bg-[#fed7aa] flex items-center justify-center transition-colors cursor-pointer"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`Delete ${ast.name}`}
-                        onClick={() => onDeleteAsset(ast)}
-                        title="Delete"
-                        className="w-7 h-7 rounded bg-[#fce7f3] text-[#be185d] hover:bg-[#fbcfe8] flex items-center justify-center transition-colors cursor-pointer"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                    {canWrite && (
+                      <div className="flex space-x-1">
+                        <button
+                          type="button"
+                          aria-label={`Edit ${ast.name}`}
+                          onClick={() => onOpenModal({ type: 'asset', assetId: ast.id })}
+                          title="Edit"
+                          className="w-7 h-7 rounded bg-[#ffedd5] text-[#c2410c] hover:bg-[#fed7aa] flex items-center justify-center transition-colors cursor-pointer"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Delete ${ast.name}`}
+                          onClick={() => onDeleteAsset(ast)}
+                          title="Delete"
+                          className="w-7 h-7 rounded bg-[#fce7f3] text-[#be185d] hover:bg-[#fbcfe8] flex items-center justify-center transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

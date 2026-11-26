@@ -17,8 +17,16 @@ import {
   Tag,
   UserCheck,
 } from 'lucide-react';
-import type { NavTab, ToastMessage } from '../types/asset';
+import type {
+  Asset,
+  Assignment,
+  Employee,
+  NavTab,
+  PersonnelEntity,
+  ToastMessage,
+} from '../types/asset';
 import type { EmployeeCenterRecord } from '../types/policy';
+import { isEmployeeManagerUser } from '../utils/hierarchyLogic';
 import {
   isSelfServiceEntityRole,
   type OwnedAssetSummary,
@@ -28,13 +36,20 @@ import { useSession } from '../auth/SessionContext';
 import { apiClient, ApiError } from '../api/client';
 import { DEFAULT_INDIAN_CENTER } from '../data/indianCenters';
 import { ModalShell } from './AssetModals';
+import { ManagerAssetsSection } from './ManagerAssetsSection';
 import { SearchableCenterSelect } from './SearchableCenterSelect';
 
 interface EmployeeDashboardViewProps {
   scopedData: ScopedEmployeeData;
+  employees?: readonly Employee[];
+  entities?: readonly PersonnelEntity[];
+  assets?: readonly Asset[];
+  assignments?: readonly Assignment[];
   onNavigate: (tab: NavTab) => void;
   onOpenPolicy?: (category: string) => void;
   onRaiseTicket: (assetId?: string) => void;
+  onSubAssign?: (assetId: string, parentAssignmentId: string) => void;
+  onReturnSubAssign?: (subAssignmentId: string, assetName: string) => void;
 }
 
 const ASSET_STATUS_PILL: Record<string, string> = {
@@ -46,9 +61,15 @@ const ASSET_STATUS_PILL: Record<string, string> = {
 
 export const EmployeeDashboardView: React.FC<EmployeeDashboardViewProps> = ({
   scopedData,
+  employees = [],
+  entities = [],
+  assets = [],
+  assignments = [],
   onNavigate,
   onOpenPolicy,
   onRaiseTicket,
+  onSubAssign,
+  onReturnSubAssign,
 }) => {
   const { session } = useSession();
 
@@ -56,6 +77,7 @@ export const EmployeeDashboardView: React.FC<EmployeeDashboardViewProps> = ({
     return null;
   }
 
+  const isManager = isEmployeeManagerUser(session, employees, entities);
   const { employee, entity, ownedAssets, openTicketsCount, tickets } = scopedData;
   const portalTitle = entity
     ? `${entity.entityType} Portal`
@@ -145,40 +167,53 @@ export const EmployeeDashboardView: React.FC<EmployeeDashboardViewProps> = ({
         </div>
       </div>
 
-      {/* Personal My Assets Section */}
-      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-        <div className="px-5 py-4 bg-slate-50 dark:bg-slate-800/70 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-extrabold text-slate-900 dark:text-white">My Assets</h2>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              Equipment actively assigned to you. Select Raise Ticket on an asset to report an issue.
-            </p>
+      {/* Personal My Assets or Manager Assets + Team Member Assets */}
+      {isManager ? (
+        <ManagerAssetsSection
+          session={session}
+          employees={employees}
+          entities={entities}
+          assets={assets}
+          assignments={assignments}
+          onRaiseTicket={onRaiseTicket}
+          onSubAssign={onSubAssign}
+          onReturnSubAssign={onReturnSubAssign}
+        />
+      ) : (
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+          <div className="px-5 py-4 bg-slate-50 dark:bg-slate-800/70 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-extrabold text-slate-900 dark:text-white">My Assets</h2>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Equipment actively assigned to you. Select Raise Ticket on an asset to report an issue.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onNavigate('my-assets')}
+              className="text-xs font-bold text-blue-700 dark:text-blue-400 hover:underline cursor-pointer shrink-0"
+            >
+              All My Assets →
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => onNavigate('my-assets')}
-            className="text-xs font-bold text-blue-700 dark:text-blue-400 hover:underline cursor-pointer shrink-0"
-          >
-            All My Assets →
-          </button>
-        </div>
 
-        {ownedAssets.length === 0 ? (
-          <div className="p-8 text-center text-xs text-slate-500">
-            No assets are currently assigned to your account.
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-5" data-testid="employee-my-assets-list">
-            {ownedAssets.map((item) => (
-              <AssetCard
-                key={item.asset.id}
-                assetSummary={item}
-                onRaiseTicket={onRaiseTicket}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+          {ownedAssets.length === 0 ? (
+            <div className="p-8 text-center text-xs text-slate-500">
+              No assets are currently assigned to your account.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-5" data-testid="employee-my-assets-list">
+              {ownedAssets.map((item) => (
+                <AssetCard
+                  key={item.asset.id}
+                  assetSummary={item}
+                  onRaiseTicket={onRaiseTicket}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Reporting Manager & Company Policies Quick Access */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -261,6 +296,10 @@ export const EmployeeDashboardView: React.FC<EmployeeDashboardViewProps> = ({
 
 interface MyAssetsViewProps {
   scopedData: ScopedEmployeeData;
+  employees?: readonly Employee[];
+  entities?: readonly PersonnelEntity[];
+  assets?: readonly Asset[];
+  assignments?: readonly Assignment[];
   initialSearch?: string;
   onRaiseTicket: (assetId?: string) => void;
   onSubAssign?: (assetId: string, parentAssignmentId: string) => void;
@@ -269,6 +308,10 @@ interface MyAssetsViewProps {
 
 export const MyAssetsView: React.FC<MyAssetsViewProps> = ({
   scopedData,
+  employees = [],
+  entities = [],
+  assets = [],
+  assignments = [],
   initialSearch = '',
   onRaiseTicket,
   onSubAssign,
@@ -289,16 +332,49 @@ export const MyAssetsView: React.FC<MyAssetsViewProps> = ({
     );
   }, [scopedData.ownedAssets, search]);
 
-  if (!session || !isSelfServiceEntityRole(session.role)) {
+  const canAccess = Boolean(
+    session &&
+      (isSelfServiceEntityRole(session.role) ||
+        session.role === 'Manager' ||
+        session.role === 'Department Manager')
+  );
+
+  if (!session || !canAccess) {
     return null;
+  }
+
+  const isManager = isEmployeeManagerUser(session, employees, entities);
+
+  if (isManager) {
+    return (
+      <div className="space-y-4 pb-10" data-testid="my-assets-view">
+        <div>
+          <h1 className="text-xl font-extrabold text-slate-900 dark:text-white">Manager Assets</h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            Personal assigned equipment and direct reporting team member assets
+          </p>
+        </div>
+        <ManagerAssetsSection
+          session={session}
+          employees={employees}
+          entities={entities}
+          assets={assets}
+          assignments={assignments}
+          initialSearch={initialSearch}
+          onRaiseTicket={onRaiseTicket}
+          onSubAssign={onSubAssign}
+          onReturnSubAssign={onReturnSubAssign}
+        />
+      </div>
+    );
   }
 
   return (
     <div className="space-y-4 pb-10" data-testid="my-assets-view">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-extrabold text-slate-900">My Assets</h1>
-          <p className="text-xs text-slate-500 mt-1">
+          <h1 className="text-xl font-extrabold text-slate-900 dark:text-white">My Assets</h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
             Showing {scopedData.ownedAssets.length} assigned{' '}
             {scopedData.ownedAssets.length === 1 ? 'asset' : 'assets'} for {session.fullName}
           </p>

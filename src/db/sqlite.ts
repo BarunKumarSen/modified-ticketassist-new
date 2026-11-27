@@ -106,6 +106,7 @@ export type AppDatabase = DatabaseSync;
 
 const DEFAULT_DB_PATH = path.resolve(process.cwd(), 'data', 'assetos.db');
 const SCHEMA_SQL_PATH = path.resolve(process.cwd(), 'src', 'db', 'schema.sql');
+export const PRODUCTION_CLEAN_META_KEY = 'production_clean_state';
 
 /** Returns true if a table with the given name exists in the SQLite database. */
 function tableExists(db: AppDatabase, tableName: string): boolean {
@@ -113,6 +114,15 @@ function tableExists(db: AppDatabase, tableName: string): boolean {
     .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1`)
     .get(tableName) as { name: string } | undefined;
   return Boolean(row);
+}
+
+/** Returns true when this database has been prepared as a clean production deployment (no demo data re-seeding). */
+export function isProductionCleanDatabase(db: AppDatabase): boolean {
+  if (!tableExists(db, 'App_Meta')) return false;
+  const row = db
+    .prepare(`SELECT meta_value FROM App_Meta WHERE meta_key = ? LIMIT 1`)
+    .get(PRODUCTION_CLEAN_META_KEY) as { meta_value: string } | undefined;
+  return row?.meta_value === '1';
 }
 
 /** Returns true if a column with the given name exists on the given table. */
@@ -621,9 +631,11 @@ export function seedDatabase(db: AppDatabase): void {
     }
   }
 
-  // Seed Employees if empty
+  const isCleanProd = isProductionCleanDatabase(db);
+
+  // Seed Employees if empty (skipped in clean production mode)
   const empCount = (db.prepare(`SELECT COUNT(*) as cnt FROM Employees`).get() as { cnt: number }).cnt;
-  if (empCount === 0) {
+  if (!isCleanProd && empCount === 0) {
     const insertEmp = db.prepare(`
       INSERT OR IGNORE INTO Employees (
         id, employee_id, name, email, department, designation, phone, branch,
@@ -653,7 +665,7 @@ export function seedDatabase(db: AppDatabase): void {
     }
   }
 
-  // Seed initial users if empty
+  // Seed initial users if empty (in clean production mode, only ensure Super Admin account exists)
   const userCount = (db.prepare(`SELECT COUNT(*) as cnt FROM Users`).get() as { cnt: number }).cnt;
   if (userCount === 0) {
     const insertUser = db.prepare(`
@@ -675,57 +687,59 @@ export function seedDatabase(db: AppDatabase): void {
       nowIso
     );
 
-    insertUser.run(
-      '00000000-0000-4000-8000-000000000002',
-      'hr.manager',
-      'Nusrat Jahan',
-      'nusrat.hr@company.com',
-      hashPassword('Hr@12345'),
-      'role_hr_manager',
-      'EMP007',
-      'HR',
-      1,
-      nowIso
-    );
+    if (!isCleanProd) {
+      insertUser.run(
+        '00000000-0000-4000-8000-000000000002',
+        'hr.manager',
+        'Nusrat Jahan',
+        'nusrat.hr@company.com',
+        hashPassword('Hr@12345'),
+        'role_hr_manager',
+        'EMP007',
+        'HR',
+        1,
+        nowIso
+      );
 
-    insertUser.run(
-      '00000000-0000-4000-8000-000000000003',
-      'dept.manager',
-      'Monirul Islam',
-      'monirul.it@company.com',
-      hashPassword('Dept@1234'),
-      'role_dept_manager',
-      'EMP008',
-      'IT',
-      1,
-      nowIso
-    );
+      insertUser.run(
+        '00000000-0000-4000-8000-000000000003',
+        'dept.manager',
+        'Monirul Islam',
+        'monirul.it@company.com',
+        hashPassword('Dept@1234'),
+        'role_dept_manager',
+        'EMP008',
+        'IT',
+        1,
+        nowIso
+      );
 
-    insertUser.run(
-      '00000000-0000-4000-8000-000000000004',
-      'rahim',
-      'Rahim Ahmed',
-      'rahim.a@example.com',
-      hashPassword('Rahim@123'),
-      'role_employee',
-      'EMP001',
-      'IT',
-      1,
-      nowIso
-    );
+      insertUser.run(
+        '00000000-0000-4000-8000-000000000004',
+        'rahim',
+        'Rahim Ahmed',
+        'rahim.a@example.com',
+        hashPassword('Rahim@123'),
+        'role_employee',
+        'EMP001',
+        'IT',
+        1,
+        nowIso
+      );
 
-    insertUser.run(
-      '00000000-0000-4000-8000-000000000005',
-      'karim',
-      'Karim Uddin',
-      'karim.u@example.com',
-      hashPassword('Karim@123'),
-      'role_employee',
-      'EMP002',
-      'HR',
-      1,
-      nowIso
-    );
+      insertUser.run(
+        '00000000-0000-4000-8000-000000000005',
+        'karim',
+        'Karim Uddin',
+        'karim.u@example.com',
+        hashPassword('Karim@123'),
+        'role_employee',
+        'EMP002',
+        'HR',
+        1,
+        nowIso
+      );
+    }
   } else if ((SEED_ADMIN_PASSWORD as string) !== 'Admin@123') {
     const adminRow = db
       .prepare(`SELECT id, password FROM Users WHERE id = ? OR LOWER(login_id) = LOWER(?) LIMIT 1`)
@@ -738,9 +752,9 @@ export function seedDatabase(db: AppDatabase): void {
     }
   }
 
-  // Seed sample Attendance & Leaves if empty
+  // Seed sample Attendance & Leaves if empty (skipped in clean production mode)
   const attCount = (db.prepare(`SELECT COUNT(*) as cnt FROM Attendance`).get() as { cnt: number }).cnt;
-  if (attCount === 0) {
+  if (!isCleanProd && attCount === 0) {
     const today = new Date();
     const fmtDate = (d: Date) => d.toISOString().split('T')[0];
     const d1 = new Date(today.getTime() - 2 * 86400000);
@@ -854,13 +868,13 @@ export function seedDatabase(db: AppDatabase): void {
     );
   }
 
-  // Seed custom/center Public Holidays if no custom holidays exist yet
+  // Seed custom/center Public Holidays if no custom holidays exist yet (skipped in clean production mode)
   const customHolCount = (
     db.prepare(`SELECT COUNT(*) as cnt FROM Public_Holidays WHERE COALESCE(is_national, 0) = 0`).get() as {
       cnt: number;
     }
   ).cnt;
-  if (customHolCount === 0) {
+  if (!isCleanProd && customHolCount === 0) {
     const now = new Date();
     const year = now.getFullYear();
     const monthStr = String(now.getMonth() + 1).padStart(2, '0');
@@ -915,9 +929,9 @@ export function seedDatabase(db: AppDatabase): void {
   const currentYear = new Date().getFullYear();
   syncNationalHolidaysForRange(db, 2025, currentYear + 2);
 
-  // Seed default Department_Designations if empty
+  // Seed default Department_Designations if empty (skipped in clean production mode)
   const desigCount = (db.prepare(`SELECT COUNT(*) as cnt FROM Department_Designations`).get() as { cnt: number }).cnt;
-  if (desigCount === 0) {
+  if (!isCleanProd && desigCount === 0) {
     const nowIso = new Date().toISOString();
     const insertDesig = db.prepare(`
       INSERT OR IGNORE INTO Department_Designations (id, department_name, designation_name, created_at)

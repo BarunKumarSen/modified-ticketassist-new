@@ -422,6 +422,11 @@ export function seedWorkspaceTablesIfNeeded(db: DatabaseSync): void {
     }
   }
 
+  const cleanMetaRow = db
+    .prepare(`SELECT meta_value FROM App_Meta WHERE meta_key = 'production_clean_state' LIMIT 1`)
+    .get() as { meta_value: string } | undefined;
+  const isCleanProd = cleanMetaRow?.meta_value === '1';
+
   const settingsRow = db.prepare(`SELECT seed_initialized FROM App_Settings WHERE id = 'default'`).get() as
     | { seed_initialized: number }
     | undefined;
@@ -430,6 +435,21 @@ export function seedWorkspaceTablesIfNeeded(db: DatabaseSync): void {
   }
 
   const nowIso = new Date().toISOString();
+  if (isCleanProd) {
+    db.prepare(
+      `INSERT OR IGNORE INTO App_Settings (
+        id, settings_json, categories_json, departments_json, locations_json, seed_initialized, updated_at
+      ) VALUES ('default', ?, ?, ?, ?, 1, ?)`
+    ).run(
+      JSON.stringify(seedData.settings),
+      JSON.stringify(seedData.categories),
+      JSON.stringify([]),
+      JSON.stringify(seedData.locations),
+      nowIso
+    );
+    return;
+  }
+
   db.exec('BEGIN IMMEDIATE');
   try {
     db.prepare(

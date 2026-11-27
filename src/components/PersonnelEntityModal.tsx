@@ -57,14 +57,14 @@ export const PersonnelEntityModal: React.FC<PersonnelEntityModalProps> = ({
           createdAt: '',
         }));
 
-  const [departmentsList, setDepartmentsList] = useState<string[]>(state.departments || ['Research']);
+  const [departmentsList, setDepartmentsList] = useState<string[]>(state.departments || []);
 
   useEffect(() => {
     let active = true;
     apiClient
       .listDepartments()
       .then((res) => {
-        if (active && res.departments.length > 0) setDepartmentsList(res.departments);
+        if (active) setDepartmentsList(res.departments || []);
       })
       .catch(() => undefined);
     return () => {
@@ -81,7 +81,7 @@ export const PersonnelEntityModal: React.FC<PersonnelEntityModalProps> = ({
     normalizeCenterName(editingEntity?.center || DEFAULT_INDIAN_CENTER)
   );
   const [department, setDepartment] = useState(
-    editingEntity?.department || state.departments[0] || 'Research'
+    editingEntity?.department || state.departments[0] || ''
   );
   const [designation, setDesignation] = useState(
     editingEntity?.designation || meta.singularLabel
@@ -315,6 +315,7 @@ export const PersonnelEntityModal: React.FC<PersonnelEntityModalProps> = ({
               onChange={(e) => setDepartment(e.target.value)}
               className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:outline-none"
             >
+              <option value="">-- Select Department --</option>
               {departmentsList.map((d) => (
                 <option key={d} value={d}>
                   {d}

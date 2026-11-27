@@ -141,40 +141,54 @@ function getRequestedTabFromUrl(): NavTab | null {
   return null;
 }
 
+const EMPTY_INITIAL_STATE: AssetOSState = {
+  users: [],
+  assets: [],
+  employees: [],
+  vendors: [],
+  assignments: [],
+  returns: [],
+  transfers: [],
+  maintenance: [],
+  disposals: [],
+  expenses: [],
+  tickets: [],
+  history: [],
+  entities: [],
+  freelancerAllotments: [],
+  categories: seedData.categories,
+  departments: [],
+  locations: seedData.locations,
+  settings: seedData.settings,
+};
+
 function loadInitialState(): AssetOSState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return seedData;
+    if (!raw) return EMPTY_INITIAL_STATE;
     const parsed = JSON.parse(raw) as Partial<AssetOSState>;
     return {
-      ...seedData,
+      ...EMPTY_INITIAL_STATE,
       ...parsed,
       settings: { ...seedData.settings, ...(parsed.settings || {}) },
       employees: Array.isArray(parsed.employees)
-        ? parsed.employees.map((e) => {
-            const seedMatch = seedData.employees.find((s) => s.id === e.id);
-            return {
-              ...e,
-              employeeId: e.employeeId || e.id,
-              center: normalizeCenterName(e.center || e.branch || seedMatch?.center || DEFAULT_INDIAN_CENTER),
-              reportingManagerName:
-                e.reportingManagerName || seedMatch?.reportingManagerName || 'System Administrator',
-              reportingManagerEmail:
-                e.reportingManagerEmail ||
-                seedMatch?.reportingManagerEmail ||
-                seedData.settings.email,
-            };
-          })
-        : seedData.employees,
+        ? parsed.employees.map((e) => ({
+            ...e,
+            employeeId: e.employeeId || e.id,
+            center: normalizeCenterName(e.center || e.branch || DEFAULT_INDIAN_CENTER),
+            reportingManagerName: e.reportingManagerName || 'System Administrator',
+            reportingManagerEmail: e.reportingManagerEmail || seedData.settings.email,
+          }))
+        : [],
       tickets: Array.isArray(parsed.tickets)
         ? parsed.tickets.map((t) => ({ ...t, priority: t.priority || 'Medium' }))
-        : seedData.tickets,
+        : [],
       categories: parsed.categories || seedData.categories,
-      departments: parsed.departments || seedData.departments,
+      departments: Array.isArray(parsed.departments) ? parsed.departments : [],
       locations: parsed.locations || seedData.locations,
     };
   } catch {
-    return seedData;
+    return EMPTY_INITIAL_STATE;
   }
 }
 
@@ -330,12 +344,13 @@ function AppContent() {
   );
 
   useEffect(() => {
+    if (!session) return;
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     } catch {
       // Ignore storage quota errors
     }
-  }, [state]);
+  }, [state, session]);
 
   const SELF_SERVICE_PORTAL_TABS = new Set<NavTab>([
     'dashboard',
@@ -375,6 +390,12 @@ function AppContent() {
 
   const handleLogout = () => {
     void logout();
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // Ignore storage errors
+    }
+    setState(EMPTY_INITIAL_STATE);
     setApiEmployees(null);
     setActiveTab('dashboard');
     setActiveModal(null);

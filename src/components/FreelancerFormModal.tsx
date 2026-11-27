@@ -48,7 +48,7 @@ export const FreelancerFormModal: React.FC<FreelancerFormModalProps> = ({
         }));
 
   const [departmentsList, setDepartmentsList] = useState<string[]>(
-    state.departments || ['Field Operations']
+    state.departments || []
   );
   const [addingDept, setAddingDept] = useState(false);
   const [newDeptName, setNewDeptName] = useState('');
@@ -59,7 +59,7 @@ export const FreelancerFormModal: React.FC<FreelancerFormModalProps> = ({
       .listDepartments()
       .then((res) => {
         if (!active) return;
-        if (res.departments.length > 0) setDepartmentsList(res.departments);
+        setDepartmentsList(res.departments || []);
       })
       .catch(() => undefined);
     return () => {
@@ -83,7 +83,7 @@ export const FreelancerFormModal: React.FC<FreelancerFormModalProps> = ({
     normalizeCenterName(editingEntity?.center || DEFAULT_INDIAN_CENTER)
   );
   const [department, setDepartment] = useState(
-    editingEntity?.department || state.departments[0] || 'Operations'
+    editingEntity?.department || state.departments[0] || ''
   );
   const [designation, setDesignation] = useState(
     editingEntity?.designation || 'Field Executive (Freelancer)'
@@ -474,6 +474,7 @@ export const FreelancerFormModal: React.FC<FreelancerFormModalProps> = ({
                   onChange={(e) => setDepartment(e.target.value)}
                   className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:outline-none"
                 >
+                  <option value="">-- Select Department --</option>
                   {departmentsList.map((d) => (
                     <option key={d} value={d}>
                       {d}

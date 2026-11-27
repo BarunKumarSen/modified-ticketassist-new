@@ -130,7 +130,7 @@ export const AssetFormModal: React.FC<{
     editingAsset ? String(editingAsset.warrantyMonths) : '36'
   );
   const [department, setDepartment] = useState(
-    editingAsset?.department || state.departments[0] || 'IT'
+    editingAsset?.department || state.departments[0] || ''
   );
   const [location, setLocation] = useState(
     editingAsset?.location || state.locations[0] || 'Floor 1'
@@ -599,6 +599,7 @@ export const AssetFormModal: React.FC<{
                 onChange={(e) => setDepartment(e.target.value)}
                 className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-600 focus:outline-none"
               >
+                <option value="">Select Department</option>
                 {state.departments.map((d) => (
                   <option key={d} value={d}>
                     {d}

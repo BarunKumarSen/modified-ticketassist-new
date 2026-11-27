@@ -84,7 +84,7 @@ export const EmployeeFormModal: React.FC<{
     .filter((e) => e.isManager && e.status === 'Active' && e.id !== editingEmployee?.id)
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  const [departmentsList, setDepartmentsList] = useState<string[]>(state.departments || ['IT']);
+  const [departmentsList, setDepartmentsList] = useState<string[]>(state.departments || []);
   const [designationsList, setDesignationsList] = useState<DepartmentDesignation[]>(
     state.designations || []
   );
@@ -99,7 +99,7 @@ export const EmployeeFormModal: React.FC<{
       .listDepartments()
       .then((res) => {
         if (!active) return;
-        if (res.departments.length > 0) setDepartmentsList(res.departments);
+        setDepartmentsList(res.departments || []);
         setDesignationsList(res.designations || []);
       })
       .catch(() => undefined);
@@ -130,7 +130,7 @@ export const EmployeeFormModal: React.FC<{
   );
   const [verifyingKind, setVerifyingKind] = useState<'personal' | 'official' | null>(null);
   const [department, setDepartment] = useState(
-    editingEmployee?.department || state.departments[0] || 'IT'
+    editingEmployee?.department || state.departments[0] || ''
   );
   const [designation, setDesignation] = useState(editingEmployee?.designation || '');
   const [panCard, setPanCard] = useState(editingEmployee?.panCard || '');
@@ -267,8 +267,8 @@ export const EmployeeFormModal: React.FC<{
       setFormError(idError);
       return;
     }
-    if (!name.trim() || !phone.trim() || !designation.trim()) {
-      setFormError('Employee Name, Mobile Number, and Designation are required.');
+    if (!name.trim() || !phone.trim() || !department.trim() || !designation.trim()) {
+      setFormError('Employee Name, Mobile Number, Department, and Designation are required.');
       return;
     }
     if (!personalEmail.trim() || !officialEmail.trim()) {
@@ -547,12 +547,14 @@ export const EmployeeFormModal: React.FC<{
             ) : (
               <select
                 value={department}
+                required
                 onChange={(e) => {
                   setDepartment(e.target.value);
                   setDesignation('');
                 }}
                 className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:outline-none"
               >
+                <option value="">-- Select Department --</option>
                 {departmentsList.map((d) => (
                   <option key={d} value={d}>
                     {d}

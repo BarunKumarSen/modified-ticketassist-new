@@ -155,7 +155,7 @@ export const FreelancerAllotmentPrintModal: React.FC<FreelancerAllotmentPrintMod
             <strong>{allotment.aadhaarNo}</strong> and PAN Card number{' '}
             <strong>{allotment.panNo}</strong> and currently working as a freelance supplier for
             conducting interview and collecting data on project specific assignment basis with
-            Median Research &amp; Consulting Pvt Ltd, I hereby request to{' '}
+            Median Research &amp; Consulting Pvt Ltd, I hereby request to center{' '}
             <strong>{centerName}</strong> issue following IT Equipment/s to me for the purpose of
             executing the below stated assignment given to me by{' '}
             <strong>{allotment.executiveName}</strong>.
@@ -257,20 +257,20 @@ export const FreelancerAllotmentPrintModal: React.FC<FreelancerAllotmentPrintMod
 
           <div className="space-y-2.5 text-justify mb-5">
             <p>
-              I hereby also confirm receipt from <strong>{centerName}</strong> of the above
+              I hereby also confirm receipt from center <strong>{centerName}</strong> of the above
               Netbook/Tablet/Laptop along with all items listed above (hereinafter collectively
               referred to as &lsquo;IT Equipment&rsquo;) mentioned above in good working condition for
               conducting interview and data collection.
             </p>
             <p>
-              I understand that the above stated &lsquo;IT Equipment&rsquo; are the property of{' '}
+              I understand that the above stated &lsquo;IT Equipment&rsquo; are the property of Median Research & Consulting Pvt. Ltd. {' '}
               <strong>{centerName}</strong> and are to be used only for above stated assignment
-              issued for Market Research work of <strong>{centerName}</strong>.
+              issued for Market Research work of Median Research & Consulting Pvt. Ltd. <strong>{centerName}</strong>.
             </p>
             <p>
-              I further undertake to return the above stated &lsquo;IT Equipment&rsquo; to{' '}
+              I further undertake to return the above stated &lsquo;IT Equipment&rsquo; to Median Research & Consulting Pvt. Ltd. {' '}
               <strong>{centerName}</strong> or the person authorized by them on completion of my
-              assignment or on instruction (verbal or written) of <strong>{centerName}</strong>{' '}
+              assignment or on instruction (verbal or written) of Median Research & Consulting Pvt. Ltd. <strong>{centerName}</strong>{' '}
               whichever is earlier.
             </p>
           </div>
